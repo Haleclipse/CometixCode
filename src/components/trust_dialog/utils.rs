@@ -18,7 +18,7 @@ fn has_hooks(settings: Option<&SettingsJson>) -> bool {
     if settings.disable_all_hooks.unwrap_or(false) {
         return false;
     }
-    if settings.status_line.is_some() || settings.file_suggestion.is_some() {
+    if settings.file_suggestion.is_some() {
         return true;
     }
     let Some(hooks) = settings.hooks.as_ref() else {

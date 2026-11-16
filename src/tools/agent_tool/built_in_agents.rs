@@ -23,8 +23,8 @@ pub fn are_explore_plan_agents_enabled() -> bool {
 }
 
 /// Maps to CC `getBuiltInAgents()` (`builtInAgents.ts:22-72`), cut down to
-/// nyan's four: general-purpose, explore, plan and review. The statusline and
-/// claude-code-guide agents are gone, and review replaces verification
+/// nyan's four: general-purpose, explore, plan and review. The
+/// claude-code-guide agent is gone, and review replaces verification
 /// unconditionally.
 pub fn get_built_in_agents() -> Vec<AgentDefinition> {
     // Maps to official SDK/non-interactive escape hatch.
@@ -101,7 +101,7 @@ mod tests {
             let _inputs = pin_inputs(None, false);
             get_built_in_agents()
         };
-        for removed in ["statusline-setup", "claude-code-guide", "verification"] {
+        for removed in ["claude-code-guide", "verification"] {
             assert!(
                 agents.iter().all(|agent| agent.agent_type != removed),
                 "{removed} must not be a built-in agent"

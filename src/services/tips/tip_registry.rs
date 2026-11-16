@@ -19,11 +19,6 @@ fn builtin_tips() -> Vec<Tip> {
             cooldown_sessions: 20,
         },
         Tip {
-            id: "status-line".to_string(),
-            content: "Customize your status line with /statusline".to_string(),
-            cooldown_sessions: 25,
-        },
-        Tip {
             id: "prompt-queue".to_string(),
             content: "Hit Enter to queue another message while nyan is working".to_string(),
             cooldown_sessions: 5,
@@ -111,8 +106,10 @@ mod tests {
     #[test]
     fn builtin_tips_do_not_advertise_removed_feedback_commands() {
         let tips = builtin_tips();
-        assert_eq!(tips.len(), 10);
+        // @nyan: the `/statusline` tip left with the command (docs/nyan/tui.md §8).
+        assert_eq!(tips.len(), 9);
         for tip in &tips {
+            assert!(!tip.content.contains("/statusline"));
             assert!(!tip.content.contains("/feedback"));
             assert!(!tip.content.contains("/bug"));
         }

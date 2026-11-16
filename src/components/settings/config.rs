@@ -2027,9 +2027,12 @@ mod tests {
             text.contains("Verbose output") && text.contains("true"),
             "Config should preview Verbose output as enabled in memory; canvas=\n{text}"
         );
+        // @nyan: verbose no longer renders a `N tokens` footer row; the built-in
+        // info line owns the token count (docs/nyan/tui.md §3.4). The preview
+        // still reaches AppState, which this test's first assertion covers.
         assert!(
-            text.contains("42 tokens"),
-            "Prompt footer should consume the in-memory verbose preview; canvas=\n{text}"
+            !text.contains("42 tokens"),
+            "verbose must not reintroduce the removed tokens row; canvas=\n{text}"
         );
     }
 

@@ -332,6 +332,33 @@ pub struct BackgroundTasksDialogProps<'a> {
     pub on_action: HandlerMut<'a, BackgroundTasksDialogAction>,
 }
 
+/// Maps to CC `BackgroundTasksDialog.tsx:392-410` local kill dispatch. Shared
+/// with the agent panel's `x` binding (§6.2), so both stop a task through the
+/// same runtime actor.
+pub(crate) fn stop_background_task(id: &str, store: Option<&crate::state::store::AppStore>) {
+    let task = store.and_then(|store| store.get().tasks.get(id).cloned());
+    match task.as_deref() {
+        Some(crate::state::app_state_store::TaskState::Dream(_)) => {
+            if let Some(store) = store {
+                crate::tasks::dream_task::kill_dream_task(id, store);
+            }
+            return;
+        }
+        // @nyan: the agent panel lists teammates too; the dialog never
+        // produced teammate rows, so this arm is new with the panel's `x`.
+        Some(crate::state::app_state_store::TaskState::InProcessTeammate(_)) => {
+            crate::tasks::in_process_teammate_task::kill_in_process_teammate(id);
+            return;
+        }
+        _ => {}
+    }
+    if crate::tasks::local_agent_task::task_identity_snapshot(id).is_some() {
+        crate::tasks::local_agent_task::kill_async_agent(id);
+    } else {
+        crate::tasks::local_shell_task::kill_shell_tasks::kill_task(id, store);
+    }
+}
+
 /// Maps to CC `BackgroundTasksDialog.tsx:392-410` local kill dispatch.
 /// Both live entries use the same runtime actor; fixture callbacks stay available.
 fn dispatch_action(
@@ -342,20 +369,7 @@ fn dispatch_action(
     if (props.tool_use_context.is_some() || props.app_store.is_some())
         && let BackgroundTasksDialogAction::Stop(id) = &action
     {
-        if let Some(store) = store
-            && matches!(
-                store.get().tasks.get(id).map(|task| task.as_ref()),
-                Some(crate::state::app_state_store::TaskState::Dream(_))
-            )
-        {
-            crate::tasks::dream_task::kill_dream_task(id, store);
-            return;
-        }
-        if crate::tasks::local_agent_task::task_identity_snapshot(id).is_some() {
-            crate::tasks::local_agent_task::kill_async_agent(id);
-        } else {
-            crate::tasks::local_shell_task::kill_shell_tasks::kill_task(id, store);
-        }
+        stop_background_task(id, store);
         return;
     }
     // Other task types are not produced by this batch's live projection.
@@ -399,11 +413,14 @@ pub fn BackgroundTasksDialog<'a>(
         None
     };
     let (source_items, foregrounded, spinner_tree) =
-        if let Some((tasks, foregrounded, view)) = live_state {
+        if let Some((tasks, foregrounded, _view)) = live_state {
             (
                 background_task_items(&tasks),
                 foregrounded,
-                view == crate::state::app_state_store::ExpandedView::Teammates,
+                // @nyan: `ExpandedView::Teammates` was removed in TUI slice E;
+                // the agent panel replaced the spinner tree, so this dialog no
+                // longer hides teammate rows on that condition.
+                false,
             )
         } else {
             (

@@ -1094,12 +1094,12 @@ mod tests {
         fn increment(store: &AppStore) {
             store.replace_with(|state| {
                 let current: u64 = state
-                    .status_line_text
+                    .advisor_model
                     .as_deref()
                     .unwrap_or("0")
                     .parse()
                     .expect("counter text");
-                state.status_line_text = Some((current + 1).to_string());
+                state.advisor_model = Some((current + 1).to_string());
             });
         }
 
@@ -1114,7 +1114,7 @@ mod tests {
             increment(&store);
         }
         worker.join().expect("worker thread");
-        assert_eq!(store.get().status_line_text.as_deref(), Some("200"));
+        assert_eq!(store.get().advisor_model.as_deref(), Some("200"));
         assert_eq!(store.revision(), 200);
     }
 }

@@ -2,7 +2,7 @@
 //! Maps to: CC `utils/hooks.ts` — decomposed into focused service modules.
 //!
 //! CC's hook system executes user-configured shell commands at lifecycle
-//! points: pre/post tool use, notifications, session start/end, status line,
+//! points: pre/post tool use, notifications, session start/end,
 //! file suggestions, compaction, worktree ops, etc. All hooks share a common
 //! execution pipeline (shell spawn + JSON stdin + stdout parsing + trust checks).
 //!
@@ -14,7 +14,6 @@ pub mod instructions_loaded;
 pub mod matching;
 pub mod parsing;
 pub mod security;
-pub mod statusline;
 
 pub mod compaction;
 pub mod elicitation;
@@ -496,8 +495,8 @@ pub struct HookContext {
 ///
 /// Every hook type spreads these fields into its event-specific payload — all
 /// 27 of them, verified by `rg -n '\.\.\.createBaseHookInput\('` over
-/// `../rebuild/src/` (28 hits: 25 in `utils/hooks.ts`, plus StatusLine and
-/// fileSuggestions, which are not `HookInput` events).
+/// `../rebuild/src/` (28 hits: 25 in `utils/hooks.ts`, plus fileSuggestions,
+/// which is not a `HookInput` event).
 ///
 /// Key set is exactly six:
 /// - `session_id`, `transcript_path`, `cwd` — always present;
@@ -507,11 +506,9 @@ pub struct HookContext {
 ///   only when it is `Some`.
 ///
 /// `project_dir` and `claude_code_version` were port-side additions and are
-/// removed: CC's only `project_dir` is nested under the StatusLine payload's
-/// `workspace` object (`components/StatusLine.tsx:118-122`), and
-/// `claude_code_version` belongs to the SDK `system.init` message
-/// (`utils/messages/systemInit.ts:74`, `coreSchemas.ts:1464`) — neither is a
-/// hook input field. CC puts the project dir on the env rail instead, as
+/// removed: neither is a hook input field. `claude_code_version` belongs to
+/// the SDK `system.init` message (`utils/messages/systemInit.ts:74`,
+/// `coreSchemas.ts:1464`). CC puts the project dir on the env rail instead, as
 /// `NYAN_PROJECT_DIR`, which `exec::exec_command_hook` sets for every hook
 /// (`utils/hooks.ts:816,882-885`).
 ///
@@ -863,10 +860,10 @@ mod tests {
 
     /// Every function that can reach `exec_command_hook`, grouped by the
     /// executor loop it goes through. The list is closed: `rg -l
-    /// 'exec_command_hook\(|exec_callback_hook\(' src/` now returns TWELVE
+    /// 'exec_command_hook\(|exec_callback_hook\(' src/` now returns ELEVEN
     /// files, all inside this module — `compaction`, `elicitation`, `env`,
     /// `exec` (the spawner itself), `file_suggestion`, `lifecycle`, `prompt`,
-    /// `statusline`, `task`, `teammate`, `tool` and `worktree`. Until this
+    /// `task`, `teammate`, `tool` and `worktree`. Until this
     /// batch it also returned `query/stop_hooks.rs`, from OUTSIDE the module.
     ///
     /// That outsider was named by this doc comment from the day the list was
@@ -887,11 +884,9 @@ mod tests {
     /// call paths into it.
     ///
     /// `pre_tool` and `permission_request` are absent because they delegate to
-    /// `tool::execute_hooks`; `statusline`/`file_suggestion` are absent because
-    /// CC gates those in `executeStatusLineCommand` (`hooks.ts:4591-4602`) and
-    /// `executeFileSuggestionCommand` (`:4681-4692`), not in the two hook-event
-    /// executors this entry maps to — `statusline.rs` carries both gates as
-    /// caller-supplied parameters already.
+    /// `tool::execute_hooks`; `file_suggestion` is absent because CC gates it
+    /// in `executeFileSuggestionCommand` (`hooks.ts:4681-4692`), not in the
+    /// two hook-event executors this entry maps to.
     #[cfg(not(windows))]
     const EXECUTOR_FAMILIES: &[&str] = &[
         "tool::execute_hooks",
@@ -1842,10 +1837,9 @@ mod tests {
     }
 
     /// `createBaseHookInput` (`hooks.ts:301-328`) returns SIX keys.
-    /// `project_dir` and `claude_code_version` were port-side additions: CC's
-    /// only `project_dir` is nested under the StatusLine payload's `workspace`
-    /// (`components/StatusLine.tsx:118-122`) and `claude_code_version` belongs
-    /// to the SDK `system.init` message (`utils/messages/systemInit.ts:74`).
+    /// `project_dir` and `claude_code_version` were port-side additions and are
+    /// not hook input fields. `claude_code_version` belongs to the SDK
+    /// `system.init` message (`utils/messages/systemInit.ts:74`).
     #[test]
     fn base_hook_input_carries_the_official_six_keys_only() {
         let base = create_base_hook_input(&HookContext {

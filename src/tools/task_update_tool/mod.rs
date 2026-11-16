@@ -508,17 +508,8 @@ impl crate::tool::ToolCall for TaskUpdateTool {
             // Maps to: CC `TaskUpdateTool.ts:139-143` — the tasks panel
             // auto-expands at the very top of call(), before the existence
             // check, unless it already is expanded.
-            if let Some(store) = context
-                .app_store
-                .tasks_store
-                .as_ref()
-                .or(context.app_store.store.as_ref())
-                && store.get().expanded_view != crate::state::app_state_store::ExpandedView::Tasks
-            {
-                store.replace_with(|state| {
-                    state.expanded_view = crate::state::app_state_store::ExpandedView::Tasks;
-                });
-            }
+            // @nyan: skipped after a manual Ctrl+T collapse.
+            context.app_store.auto_expand_tasks_panel();
             // Maps to: CC `TaskUpdateTool.ts:231-265` — TaskCompleted hooks run
             // BEFORE the write, and a blocking one returns `success: false`
             // with no `updatedFields` instead of persisting anything. Note the
@@ -539,8 +530,12 @@ impl crate::tool::ToolCall for TaskUpdateTool {
                     new_messages: Vec::new(),
                 };
             }
+            let output = task_update_output(args);
+            // @nyan: any call that got this far may have written (update,
+            // delete, block links), so the panel re-reads the list.
+            context.app_store.bump_task_list_revision();
             crate::tool::ToolResult {
-                data: crate::tool::ToolOutput::TaskUpdate(task_update_output(args)),
+                data: crate::tool::ToolOutput::TaskUpdate(output),
                 new_messages: Vec::new(),
             }
         })
@@ -699,6 +694,84 @@ mod tests {
             tool.map_tool_result_to_tool_result_block_param(&data, "toolu_task_update");
         assert_eq!(status, crate::types::message::ToolResultStatus::Success);
         assert_eq!(content, "Updated task #4 owner, status");
+    }
+
+    fn seeded_pending_task(id: &str) {
+        let mut tasks = crate::utils::tasks::TASK_TOOL_STORE.lock().unwrap();
+        tasks.clear();
+        tasks.push(crate::utils::tasks::TaskRecord {
+            id: id.to_string(),
+            subject: "Run tests".to_string(),
+            description: "Run regression tests".to_string(),
+            active_form: None,
+            status: "pending".to_string(),
+            owner: None,
+            blocks: Vec::new(),
+            blocked_by: Vec::new(),
+            metadata: None,
+        });
+    }
+
+    async fn call_update(
+        store: &crate::state::store::AppStore,
+        args: serde_json::Value,
+    ) -> crate::tool::ToolOutput {
+        use crate::tool::ToolCall;
+        let mut context = crate::tool::ToolUseContext::default();
+        context.app_store = crate::tool::AppStoreRef::new(store.clone());
+        let request = crate::utils::permissions::permissions::mock_permission_request_with_input(
+            "perm-task-update-panel".to_string(),
+            "toolu_task_update_panel".to_string(),
+            "TaskUpdate".to_string(),
+            "update".to_string(),
+            args.clone(),
+            crate::types::permissions::PermissionMode::Default,
+        );
+        super::TaskUpdateTool
+            .call(&args, &request, &context, None, None, None)
+            .await
+            .data
+    }
+
+    /// @nyan: update auto-expands the panel unless suppressed, and bumps the
+    /// refresh revision either way.
+    #[tokio::test]
+    async fn update_auto_expands_unless_suppressed_and_always_bumps_the_revision() {
+        use crate::state::app_state_store::{AppState, ExpandedView};
+
+        let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _temp = crate::utils::tasks::TempTaskConfig::new("update-panel");
+        seeded_pending_task("4");
+
+        let open = crate::state::store::AppStore::new(AppState::default(), None);
+        call_update(
+            &open,
+            serde_json::json!({"taskId": "4", "status": "in_progress"}),
+        )
+        .await;
+        assert_eq!(open.get().expanded_view, ExpandedView::Tasks);
+        assert_eq!(open.get().task_list_revision, 1);
+
+        let mut suppressed_state = AppState::default();
+        suppressed_state.todo_auto_expand_suppressed = true;
+        let suppressed = crate::state::store::AppStore::new(suppressed_state, None);
+        call_update(
+            &suppressed,
+            serde_json::json!({"taskId": "4", "status": "completed"}),
+        )
+        .await;
+        assert_eq!(suppressed.get().expanded_view, ExpandedView::None);
+        assert_eq!(suppressed.get().task_list_revision, 1);
+
+        // Deleting is also a write the panel has to pick up.
+        call_update(
+            &suppressed,
+            serde_json::json!({"taskId": "4", "status": "deleted"}),
+        )
+        .await;
+        assert_eq!(suppressed.get().expanded_view, ExpandedView::None);
+        assert_eq!(suppressed.get().task_list_revision, 2);
     }
 
     fn blocking_task_completed_config() -> crate::services::hooks::RegisteredHooks {

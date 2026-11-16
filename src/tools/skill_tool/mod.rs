@@ -1014,8 +1014,13 @@ mod tests {
     fn builtin_allowed_tools_matches_official_safe_properties() {
         // CC SkillTool.ts:913-934 checks own command properties, including
         // builtin allowedTools; a filesystem SkillCommand is not required.
-        let mut command = crate::commands::statusline::command();
+        let commands = crate::commands::declared_commands_for_tests();
+        let mut command = crate::commands::find_command("init", &commands)
+            .expect("init")
+            .clone();
         assert!(command.prompt_command.is_none());
+        assert!(command.allowed_tools.is_empty());
+        command.allowed_tools.push("Agent".to_string());
         assert!(!skill_has_only_safe_properties(&command));
         command.allowed_tools.clear();
         assert!(skill_has_only_safe_properties(&command));

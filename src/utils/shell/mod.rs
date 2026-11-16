@@ -491,6 +491,13 @@ pub fn apply_cwd_after_command(context: &mut crate::tool::ToolUseContext, new_cw
         return;
     }
     context.cwd_override = Some(new_cwd.clone());
+    // @nyan: footer git follows the session cwd. Not on the render path.
+    // Subagents share the parent AppStore; only `agent_id.is_none()` refreshes.
+    if context.agent_id.is_none()
+        && let Some(store) = context.app_store.store.clone()
+    {
+        crate::state::footer_metrics::refresh_git(&store, Some(new_cwd.clone()));
+    }
     crate::utils::session_environment::invalidate_session_env_cache();
     let run_hooks = move || async move {
         let _ = crate::services::hooks::env::execute_cwd_changed_hooks(

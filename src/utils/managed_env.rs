@@ -27,7 +27,6 @@ pub const DANGEROUS_SHELL_SETTINGS: &[&str] = &[
     "awsCredentialExport",
     "gcpAuthRefresh",
     "otelHeadersHelper",
-    "statusLine",
 ];
 
 /// Maps to CC `utils/managedEnvConstants.ts#SAFE_ENV_VARS`.

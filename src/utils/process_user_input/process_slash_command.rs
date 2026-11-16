@@ -1636,9 +1636,13 @@ mod tests {
 
     #[test]
     fn builtin_prompt_matches_official_command_allowed_tools_transport() {
-        let mut command = crate::commands::statusline::command();
+        let mut command = commands::find_command("init", get_commands())
+            .expect("init")
+            .clone();
         // The generic command owns these grants even without a captured skill.
         assert!(command.prompt_command.is_none());
+        command.get_prompt_for_command =
+            Some(|_, args, _| Ok(vec![UserContent::Text(format!("prompt:{args}"))]));
         for (declared, expected) in [
             (
                 vec!["Agent", "Read(~/**)", "Edit(~/.nyan/settings.json)"],
@@ -1653,8 +1657,8 @@ mod tests {
             command.allowed_tools = declared.into_iter().map(str::to_string).collect();
             let expected = expected.into_iter().map(str::to_string).collect::<Vec<_>>();
             let result = process_slash_command_with_context(
-                "/statusline use model and cwd",
-                Some("statusline-invocation".into()),
+                "/init use model and cwd",
+                Some("init-invocation".into()),
                 &[command.clone()],
                 &crate::tool::ToolUseContext::default(),
                 Vec::new(),
@@ -1662,17 +1666,17 @@ mod tests {
             assert!(result.should_query);
             assert!(result.local_action.is_none());
             assert_eq!(result.messages.len(), 3);
-            assert_eq!(result.messages[0].uuid, "statusline-invocation");
+            assert_eq!(result.messages[0].uuid, "init-invocation");
             assert!(matches!(&result.messages[0].kind,
                 RenderableMessageKind::User { message }
                     if message.content == vec![UserContent::Text(
-                        "<command-message>statusline</command-message>\n<command-name>/statusline</command-name>\n<command-args>use model and cwd</command-args>".into()
+                        "<command-message>init</command-message>\n<command-name>/init</command-name>\n<command-args>use model and cwd</command-args>".into()
                     )]
             ));
             assert!(matches!(&result.messages[1].kind,
                 RenderableMessageKind::User { message }
                     if message.content == vec![UserContent::MetaText(
-                        "Create an Agent with subagent_type \"general-purpose\" and the prompt \"use model and cwd\"".into()
+                        "prompt:use model and cwd".into()
                     )]
             ));
             assert_eq!(result.allowed_tools, Some(expected.clone()));

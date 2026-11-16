@@ -135,7 +135,6 @@ pub fn HooksConfigMenu<'a>(
                             Text(content: "When hooks are disabled:".to_string(), dim: true, wrap: TextWrap::NoWrap)
                         }
                         Text(content: "· No hook commands will execute".to_string(), dim: true, wrap: TextWrap::Wrap)
-                        Text(content: "· StatusLine will not be displayed".to_string(), dim: true, wrap: TextWrap::Wrap)
                         Text(content: "· Tool operations will proceed without hook validation".to_string(), dim: true, wrap: TextWrap::Wrap)
                     }
                     Text(

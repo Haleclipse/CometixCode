@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use super::app_state_store::{AppState, ExpandedView};
+use super::app_state_store::AppState;
 use crate::utils::config::save_global_config;
 
 /// Maps to: CC `onChangeAppState({newState, oldState})`.
@@ -23,23 +23,9 @@ pub fn on_change_app_state(new: &AppState, old: &AppState) {
         crate::bootstrap::state::set_session_profile(new.main_loop_profile.clone());
     }
 
-    // expandedView — persist as showExpandedTodos + showSpinnerTree for
-    // backwards compat. Maps to: onChangeAppState.ts:114-128, including the
-    // read-before-write guard.
-    if new.expanded_view != old.expanded_view {
-        let show_expanded_todos = new.expanded_view == ExpandedView::Tasks;
-        let show_spinner_tree = new.expanded_view == ExpandedView::Teammates;
-        let current = crate::utils::config::load_global_config();
-        if (current.show_expanded_todos != Some(show_expanded_todos)
-            || current.show_spinner_tree != Some(show_spinner_tree))
-            && let Err(error) = save_global_config(|config| {
-                config.show_expanded_todos = Some(show_expanded_todos);
-                config.show_spinner_tree = Some(show_spinner_tree);
-            })
-        {
-            tracing::warn!(%error, "failed to persist expandedView");
-        }
-    }
+    // @nyan: expandedView is no longer persisted (CC onChangeAppState.ts:114-128
+    // wrote showExpandedTodos / showSpinnerTree). Startup never read them back,
+    // and the todo panel's state is per-session (docs/nyan/tui.md §4.3).
 
     // verbose — persist to globalConfig. Maps to: onChangeAppState.ts:130-140.
     if new.verbose != old.verbose {

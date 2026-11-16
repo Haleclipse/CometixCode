@@ -1005,7 +1005,7 @@ mod tests {
         assert!(poll_once(&mut subscription, &waker).is_pending());
 
         // A field nobody here selected.
-        store.replace_with(|state| state.status_line_text = Some("busy".into()));
+        store.replace_with(|state| state.advisor_model = Some("busy".into()));
         assert_eq!(
             wakes.load(std::sync::atomic::Ordering::SeqCst),
             1,

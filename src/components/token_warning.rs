@@ -103,30 +103,36 @@ pub fn token_warning_text(
                     .round()
                     .max(0.0) as i64;
         }
-        let label = if reactive_only_mode {
-            format!(
+        // reactive_only_mode keeps its own copy and dim tone.
+        if reactive_only_mode {
+            let label = format!(
                 "{}% context used",
                 100_i64.saturating_sub(display_percent_left)
-            )
-        } else {
-            format!("{display_percent_left}% until auto-compact")
-        };
+            );
+            return Some((
+                with_upgrade_message(label, upgrade_message),
+                TokenWarningTone::Dim,
+            ));
+        }
+        // @nyan: short copy + the info line's two-level context color
+        // (docs/nyan/tui.md §3.4). CC printed the remaining percentage and
+        // always used the dim tone.
         return Some((
-            with_upgrade_message(label, upgrade_message),
-            TokenWarningTone::Dim,
+            with_upgrade_message("auto-compact soon".to_string(), upgrade_message),
+            if state.is_above_error_threshold {
+                TokenWarningTone::Error
+            } else {
+                TokenWarningTone::Warning
+            },
         ));
     }
 
+    // @nyan: short copy, same color source as the info line's context segment
+    // (docs/nyan/tui.md §3.4).
     let label = if let Some(upgrade_message) = upgrade_message.filter(|value| !value.is_empty()) {
-        format!(
-            "Context low ({}% remaining) · {upgrade_message}",
-            state.percent_left
-        )
+        format!("/compact to free context · {upgrade_message}")
     } else {
-        format!(
-            "Context low ({}% remaining) · Run /compact to compact & continue",
-            state.percent_left
-        )
+        "/compact to free context".to_string()
     };
     Some((
         label,
@@ -250,9 +256,10 @@ mod tests {
     }
 
     #[test]
-    fn token_warning_text_matches_auto_compact_and_manual_labels() {
-        let auto = token_warning_text(
-            170_000,
+    fn token_warning_text_matches_short_copy_and_two_level_tone() {
+        // 167k threshold: warning at 127k, error at 147k.
+        let warning = token_warning_text(
+            130_000,
             "claude-sonnet-4-20250514",
             false,
             Some(true),
@@ -262,11 +269,25 @@ mod tests {
             None,
         )
         .expect("warning text");
-        assert!(auto.0.contains("until auto-compact"), "text={}", auto.0);
-        assert_eq!(auto.1, TokenWarningTone::Dim);
+        assert_eq!(warning.0, "auto-compact soon");
+        assert_eq!(warning.1, TokenWarningTone::Warning);
+
+        let error = token_warning_text(
+            170_000,
+            "claude-sonnet-4-20250514",
+            false,
+            Some(true),
+            false,
+            false,
+            None,
+            None,
+        )
+        .expect("error text");
+        assert_eq!(error.0, "auto-compact soon");
+        assert_eq!(error.1, TokenWarningTone::Error);
 
         let manual = token_warning_text(
-            190_000,
+            130_000,
             "claude-sonnet-4-20250514",
             false,
             Some(false),
@@ -276,15 +297,12 @@ mod tests {
             None,
         )
         .expect("manual warning");
-        assert!(manual.0.contains("Run /compact to compact & continue"));
-        assert!(matches!(
-            manual.1,
-            TokenWarningTone::Warning | TokenWarningTone::Error
-        ));
+        assert_eq!(manual.0, "/compact to free context");
+        assert_eq!(manual.1, TokenWarningTone::Warning);
     }
 
     #[test]
-    fn token_warning_component_renders_warning_row() {
+    fn token_warning_component_renders_short_hint_row() {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 TokenWarning(
@@ -297,13 +315,14 @@ mod tests {
         .render(Some(120))
         .to_string();
 
-        assert!(text.contains("Context low"), "canvas=\n{text}");
+        assert!(text.contains("/compact to free context"), "canvas=\n{text}");
+        assert!(!text.contains("Context low"), "canvas=\n{text}");
     }
 
     #[test]
     fn token_warning_text_needs_no_opt_in_beyond_the_official_threshold() {
         let (label, _) = token_warning_text(
-            190_000,
+            130_000,
             "claude-sonnet-4-20250514",
             false,
             Some(false),
@@ -313,7 +332,7 @@ mod tests {
             None,
         )
         .expect("CC gates this row on the warning threshold alone");
-        assert!(label.starts_with("Context low ("), "label={label}");
+        assert_eq!(label, "/compact to free context");
 
         assert!(
             token_warning_text(

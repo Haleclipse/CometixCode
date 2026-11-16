@@ -779,6 +779,13 @@ pub async fn compact_conversation(
     );
     let (masked_count, masked_tokens) = masked_view_stats(&messages);
     attach_nyan_receipt(&mut result, context, masked_count, masked_tokens);
+    // @nyan: compaction rewrites the cached prefix, so the next main-thread
+    // request must not raise a cache-miss warning.
+    if context.agent_id.is_none()
+        && let Some(store) = context.app_store.store.clone()
+    {
+        crate::state::footer_metrics::note_main_thread_prefix_reset(&store);
+    }
     Ok(result)
 }
 
@@ -1042,6 +1049,12 @@ pub async fn partial_compact_conversation_with_trigger(
     };
     let (masked_count, masked_tokens) = masked_view_stats(&all_messages);
     attach_nyan_receipt(&mut result, context, masked_count, masked_tokens);
+    // @nyan: partial compaction rewrites the cached prefix too.
+    if context.agent_id.is_none()
+        && let Some(store) = context.app_store.store.clone()
+    {
+        crate::state::footer_metrics::note_main_thread_prefix_reset(&store);
+    }
     Ok(result)
 }
 

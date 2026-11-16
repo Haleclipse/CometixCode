@@ -174,6 +174,30 @@ impl AppStoreRef {
         self.store.is_some() || self.get_state_override.0.is_some()
     }
 
+    /// @nyan: the todo panel's refresh signal. TaskCreate / TaskUpdate call this
+    /// after the task list on disk changed. Same store choice as CC's
+    /// `setAppStateForTasks` (`tasks_store`, else `store`).
+    pub fn bump_task_list_revision(&self) {
+        if let Some(store) = self.tasks_store.as_ref().or(self.store.as_ref()) {
+            store.replace_with(|state| {
+                state.task_list_revision = state.task_list_revision.wrapping_add(1);
+            });
+        }
+    }
+
+    /// Maps to: CC TaskCreate / TaskUpdate `expandedView: 'tasks'` auto-expand.
+    /// @nyan: skipped while `todo_auto_expand_suppressed` (the user collapsed
+    /// the panel with Ctrl+T and has not expanded it again).
+    pub fn auto_expand_tasks_panel(&self) {
+        use crate::state::app_state_store::ExpandedView;
+        if let Some(store) = self.tasks_store.as_ref().or(self.store.as_ref()) {
+            let state = store.get();
+            if state.expanded_view != ExpandedView::Tasks && !state.todo_auto_expand_suppressed {
+                store.replace_with(|state| state.expanded_view = ExpandedView::Tasks);
+            }
+        }
+    }
+
     /// Maps to: CC `ToolUseContext.setAppState(f)` — the handle-only body of
     /// [`ToolUseContext::set_app_state`], for the seams that hold the store
     /// handles without the surrounding context (the headless permission tail

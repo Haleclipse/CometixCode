@@ -20,6 +20,7 @@ citationPointer、状态字段、回收站、远端协调器、按美元算的�
 | [cicd.md](cicd.md) | CI/CD：hosted-only、一次构建分片执行、fail-closed Merge gate、零 secret、tag 门禁 + 已验证字节发布；含 master 基线 26 个失败的实测清单 | 设计稿 |
 | [cost.md](cost.md) | 费用统计：请求层统一记账、目录价 + profile 覆盖、1h 写入 = 输入 × 2、usage 记录与 resume 重放、`--max-budget-usd` | 定稿 |
 | [agents-md.md](agents-md.md) | 指令文件：彻底移除 CLAUDE.md 及其变体，统一采用通用 AGENTS.md 规范 | 定稿 |
+| [tui.md](tui.md) | TUI 呈现：删除 statusLine、两行页脚（信息行 + 模式行）、todo 面板、agent 面板、tps / cache 口径、窄屏与高度降级 | 已实现 |
 
 ## 一、通用约定
 

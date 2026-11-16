@@ -513,7 +513,6 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
             crate::main::build_headless_initial_app_state(
                 &startup_settings,
                 &startup_errors,
-                workspace_trusted,
                 &startup_config,
             )
         })

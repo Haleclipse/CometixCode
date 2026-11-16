@@ -246,17 +246,10 @@ impl crate::tool::ToolCall for TaskCreateTool {
             // Maps to: CC `TaskCreateTool.ts:115-119` — creating a task
             // auto-expands the tasks panel unless it already is expanded
             // (`if (prev.expandedView === 'tasks') return prev`).
-            if let Some(store) = context
-                .app_store
-                .tasks_store
-                .as_ref()
-                .or(context.app_store.store.as_ref())
-                && store.get().expanded_view != crate::state::app_state_store::ExpandedView::Tasks
-            {
-                store.replace_with(|state| {
-                    state.expanded_view = crate::state::app_state_store::ExpandedView::Tasks;
-                });
-            }
+            // @nyan: skipped after a manual Ctrl+T collapse, and the panel is
+            // told to re-read the list.
+            context.app_store.auto_expand_tasks_panel();
+            context.app_store.bump_task_list_revision();
             crate::tool::ToolResult {
                 data: crate::tool::ToolOutput::TaskCreate(output),
                 new_messages: Vec::new(),
@@ -509,5 +502,47 @@ mod tests {
             store.get().expanded_view,
             crate::state::app_state_store::ExpandedView::Tasks
         );
+        assert_eq!(store.get().task_list_revision, 1);
+    }
+
+    /// @nyan: after a manual Ctrl+T collapse the panel must not pop back open,
+    /// but the refresh signal still fires so the collapsed line stays current.
+    #[tokio::test]
+    async fn create_respects_suppressed_auto_expand_but_still_bumps_the_revision() {
+        use crate::tool::ToolCall;
+
+        let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _temp = crate::utils::tasks::TempTaskConfig::new("create-suppressed");
+
+        let mut initial = crate::state::app_state_store::AppState::default();
+        initial.todo_auto_expand_suppressed = true;
+        let store = crate::state::store::AppStore::new(initial, None);
+        let mut context = crate::tool::ToolUseContext::default();
+        context.app_store = crate::tool::AppStoreRef::new(store.clone());
+
+        let args = serde_json::json!({"subject": "Review auth", "description": "Inspect"});
+        let request = crate::utils::permissions::permissions::mock_permission_request_with_input(
+            "perm-task-create-suppressed".to_string(),
+            "toolu_task_create_suppressed".to_string(),
+            "TaskCreate".to_string(),
+            "Review auth".to_string(),
+            args.clone(),
+            crate::types::permissions::PermissionMode::Default,
+        );
+        for expected_revision in 1..=2u64 {
+            let result = super::TaskCreateTool
+                .call(&args, &request, &context, None, None, None)
+                .await;
+            assert!(matches!(
+                result.data,
+                crate::tool::ToolOutput::TaskCreate(_)
+            ));
+            assert_eq!(
+                store.get().expanded_view,
+                crate::state::app_state_store::ExpandedView::None
+            );
+            assert_eq!(store.get().task_list_revision, expected_revision);
+        }
     }
 }

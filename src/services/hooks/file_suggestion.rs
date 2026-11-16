@@ -1,6 +1,6 @@
 //! FileSuggestion command execution.
 //! Maps to: CC utils/hooks.ts:4675-4910 (executeFileSuggestionCommand).
-//! Like statusline, this is a settings-configured command, not a hook event.
+//! This is a settings-configured command, not a hook event.
 
 use super::exec::exec_command_hook;
 use std::time::Duration;

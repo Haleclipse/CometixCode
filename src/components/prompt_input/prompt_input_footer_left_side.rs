@@ -42,6 +42,15 @@ pub struct PromptInputFooterLeftSideProps {
     /// `teamsSelected`, forwarded to `ModeIndicator` (`:183-184`).
     pub tasks_selected: bool,
     pub teams_selected: bool,
+    /// @nyan: the agent panel is visible, so the mode row offers `↓ agents`
+    /// (docs/nyan/tui.md §6.2). Mirrors `agent_panel::panel_shows_rows`.
+    pub agent_panel_visible: bool,
+    /// @nyan: the panel owns the footer selection; its own key-hint line
+    /// replaces `↓ agents`.
+    pub agent_panel_focused: bool,
+    /// @nyan: a row completed within the last 30 s; show
+    /// `/tasks to see agents` (§6.1).
+    pub finished_hint_active: bool,
 }
 
 #[component]
@@ -102,6 +111,9 @@ pub fn PromptInputFooterLeftSide(
                 teammate_count: props.teammate_count,
                 tasks_selected: props.tasks_selected,
                 teams_selected: props.teams_selected,
+                agent_panel_visible: props.agent_panel_visible,
+                agent_panel_focused: props.agent_panel_focused,
+                finished_hint_active: props.finished_hint_active,
             )
         }
     }
@@ -119,6 +131,29 @@ struct ModeIndicatorProps {
     teammate_count: usize,
     tasks_selected: bool,
     teams_selected: bool,
+    agent_panel_visible: bool,
+    agent_panel_focused: bool,
+    finished_hint_active: bool,
+}
+
+/// @nyan: the mode row's agent-panel suffixes (§6.1-§6.2), appended after the
+/// mode indicator with ` · ` separators. Pure so the footer tests can pin the
+/// copy without a canvas.
+pub fn agent_panel_mode_suffixes(
+    agent_panel_visible: bool,
+    agent_panel_focused: bool,
+    finished_hint_active: bool,
+) -> Vec<&'static str> {
+    let mut suffixes = Vec::new();
+    // `↓ agents` only when the panel renders; below 16 rows the pills return
+    // with their own `↓ to manage` hint.
+    if agent_panel_visible && !agent_panel_focused {
+        suffixes.push("↓ agents");
+    }
+    if finished_hint_active {
+        suffixes.push("/tasks to see agents");
+    }
+    suffixes
 }
 
 #[component]
@@ -146,6 +181,11 @@ fn ModeIndicator(props: &ModeIndicatorProps, hooks: Hooks) -> impl Into<AnyEleme
     // text, so the slot stays empty while loading and only the
     // "? for shortcuts" idle fallback remains (CC's empty-parts condition).
     let show_shortcuts_hint = props.show_hint && !props.is_loading && primary_item_count == 0;
+    let agent_suffixes = agent_panel_mode_suffixes(
+        props.agent_panel_visible,
+        props.agent_panel_focused,
+        props.finished_hint_active,
+    );
 
     element! {
         View(flex_direction: FlexDirection::Row, column_gap: 1u32, overflow: Overflow::Hidden) {
@@ -202,6 +242,18 @@ fn ModeIndicator(props: &ModeIndicatorProps, hooks: Hooks) -> impl Into<AnyEleme
             } else {
                 None
             })
+            // @nyan: agent-panel suffixes after the mode indicator (§6.1-§6.2).
+            // The row's `column_gap` supplies the spaces around the `·`.
+            #(agent_suffixes.iter().flat_map(|suffix| {
+                [
+                    element! {
+                        Text(content: "·".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
+                    }.into_any(),
+                    element! {
+                        Text(content: (*suffix).to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
+                    }.into_any(),
+                ]
+            }).collect::<Vec<_>>())
         }
     }
     .into_any()
@@ -280,6 +332,9 @@ mod tests {
                             teammate_count: props.teammate_count,
                             tasks_selected: props.tasks_selected,
                             teams_selected: props.teams_selected,
+                            agent_panel_visible: props.agent_panel_visible,
+                            agent_panel_focused: props.agent_panel_focused,
+                            finished_hint_active: props.finished_hint_active,
                         )
                     }.into_any()),
                 )
@@ -441,5 +496,47 @@ mod tests {
         assert!(text.contains("1 local agent"), "canvas=\n{text}");
         assert!(text.contains("↓ to manage"), "canvas=\n{text}");
         assert!(!text.contains("1 task"), "canvas=\n{text}");
+    }
+
+    #[test]
+    fn agent_panel_suffixes_follow_visibility_focus_and_the_finished_hint() {
+        use agent_panel_mode_suffixes as suffixes;
+        // Visible + unfocused: the prompt offers ↓ agents.
+        assert_eq!(suffixes(true, false, false), vec!["↓ agents"]);
+        // Focused: the panel's own hint line replaces ↓ agents.
+        assert_eq!(suffixes(true, true, false), Vec::<&str>::new());
+        // Hidden panel: no ↓ agents (the pill's ↓ to manage returns).
+        assert_eq!(suffixes(false, false, false), Vec::<&str>::new());
+        // The finished hint outlives the focused state and coexists with ↓.
+        assert_eq!(
+            suffixes(true, false, true),
+            vec!["↓ agents", "/tasks to see agents"]
+        );
+        assert_eq!(suffixes(false, false, true), vec!["/tasks to see agents"]);
+
+        let text = render(PromptInputFooterLeftSideProps {
+            agent_panel_visible: true,
+            finished_hint_active: true,
+            ..Default::default()
+        });
+        // The row's `column_gap` renders as an empty cell, so this helper's
+        // per-cell join drops the spaces: the separators are still ` · ` on
+        // screen (see `render_searching`).
+        assert!(
+            text.contains("? for shortcuts·↓ agents·/tasks to see agents"),
+            "canvas=\n{text}"
+        );
+
+        let focused = render(PromptInputFooterLeftSideProps {
+            agent_panel_visible: true,
+            agent_panel_focused: true,
+            finished_hint_active: true,
+            ..Default::default()
+        });
+        assert!(!focused.contains("↓ agents"), "canvas=\n{focused}");
+        assert!(
+            focused.contains("? for shortcuts·/tasks to see agents"),
+            "canvas=\n{focused}"
+        );
     }
 }

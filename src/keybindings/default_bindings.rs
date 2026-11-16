@@ -266,6 +266,9 @@ pub fn default_binding_blocks() -> Vec<KeybindingBlock> {
             ("left", "footer:previous"),
             ("enter", "footer:openSelected"),
             ("escape", "footer:clearSelection"),
+            // @nyan: stop the agent panel's selected task (§6.2); the handler
+            // only fires while the panel owns the footer selection.
+            ("x", "footer:stopSelected"),
         ],
         &mut bindings,
     );
@@ -436,6 +439,38 @@ mod tests {
             ChordResolveResult::Match {
                 action: "chat:cycleMode".into()
             }
+        );
+    }
+
+    #[test]
+    fn x_resolves_footer_stop_selected_in_footer_context() {
+        // @nyan: the agent panel's stop key (§6.2); `x` stays free in Chat so
+        // typing it into the prompt is unaffected.
+        let bindings = default_bindings();
+        let footer: HashSet<_> = [ContextName::Footer, ContextName::Global].into();
+        assert_eq!(
+            resolve_key_with_chord_state(
+                Some(&parse_keystroke("x")),
+                false,
+                &footer,
+                &bindings,
+                None,
+            ),
+            ChordResolveResult::Match {
+                action: "footer:stopSelected".into()
+            }
+        );
+        let chat: HashSet<_> = [ContextName::Chat, ContextName::Global].into();
+        assert_eq!(
+            resolve_key_with_chord_state(
+                Some(&parse_keystroke("x")),
+                false,
+                &chat,
+                &bindings,
+                None,
+            ),
+            ChordResolveResult::None,
+            "`x` has no Chat binding, so it stays ordinary text input"
         );
     }
 

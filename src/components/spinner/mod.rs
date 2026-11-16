@@ -11,7 +11,6 @@ pub mod spinner_animation_row;
 pub mod spinner_glyph;
 pub mod teammate_select_hint;
 pub mod teammate_spinner_line;
-pub mod teammate_spinner_tree;
 pub mod teammate_tree;
 pub mod use_shimmer_animation;
 pub mod use_stalled_animation;
@@ -20,7 +19,7 @@ pub mod utils;
 pub use spinner_glyph::SpinnerGlyph;
 pub use teammate_tree::{
     TeammateMessageBlockSnapshot, TeammateMessageSnapshot, TeammateRecentActivity,
-    TeammateSpinnerColor, TeammateSpinnerTask, TeammateSpinnerTree, TeammateTaskSnapshot,
+    TeammateSpinnerColor, TeammateSpinnerTask, TeammateTaskSnapshot,
 };
 
 use crate::components::message_response::MessageResponse;
@@ -700,38 +699,15 @@ pub fn SpinnerWithVerb(
     let teammate_tasks = crate::state::app_state::use_app_state(&mut hooks, |state| {
         running_teammate_spinner_tasks_from_app_tasks(&state.tasks)
     });
-    // Maps to: CC TeammateSpinnerTree / Spinner reading selection + focus from
-    // AppState (`selectedIPAgentIndex`, `viewSelectionMode`,
-    // `viewingAgentTaskId`, `showTeammateMessagePreview`, `expandedView`).
-    // One hook per field, per CC `AppState.tsx:138-141`: "For multiple
-    // independent fields, call the hook multiple times". The five-field tuple
-    // this replaces was a CONSTRUCTED selector, which the same doc block
-    // forbids at `:143-148` — under `Object.is` it would report a change every
-    // render. Rust's `PartialEq` made it merely wasteful rather than wrong, but
-    // it is still the shape the source rules out.
-    let selected_ip_agent_index =
-        crate::state::app_state::use_app_state(&mut hooks, |state| state.selected_ip_agent_index);
-    let view_selection_mode =
-        crate::state::app_state::use_app_state(&mut hooks, |state| state.view_selection_mode);
+    // Maps to: CC Spinner reading `viewingAgentTaskId` from AppState. The
+    // selection/tree fields are gone with `TeammateSpinnerTree`: the agent
+    // panel owns teammate rows now (docs/nyan/tui.md §6.2).
     let viewing_agent_task_id = crate::state::app_state::use_app_state(&mut hooks, |state| {
         state.viewing_agent_task_id.clone()
     });
-    let show_teammate_message_preview =
-        crate::state::app_state::use_app_state(&mut hooks, |state| {
-            state.show_teammate_message_preview
-        });
-    let expanded_view =
-        crate::state::app_state::use_app_state(&mut hooks, |state| state.expanded_view);
-    let is_in_selection_mode = view_selection_mode.is_selecting();
-    let selected_index = is_in_selection_mode.then_some(selected_ip_agent_index);
     let has_running_teammates = !teammate_tasks.is_empty();
     let all_teammates_idle =
         has_running_teammates && teammate_tasks.iter().all(|task| task.is_idle);
-    // Maps to: CC `showSpinnerTree = expandedView === 'teammates'`.
-    let show_teammate_tree = matches!(
-        expanded_view,
-        crate::state::app_state_store::ExpandedView::Teammates
-    ) && has_running_teammates;
     let foregrounded_teammate = viewing_agent_task_id
         .as_deref()
         .and_then(|id| teammate_tasks.iter().find(|task| task.id == id))
@@ -744,14 +720,12 @@ pub fn SpinnerWithVerb(
         .as_ref()
         .filter(|task| !task.is_idle)
         .cloned();
-    let teammate_token_count = if show_teammate_tree {
-        0
-    } else {
-        teammate_tasks
-            .iter()
-            .map(|task| task.token_count)
-            .sum::<usize>()
-    };
+    // @nyan: the teammate tree no longer splits the token count; the agent
+    // panel lists teammates with their own stats.
+    let teammate_token_count = teammate_tasks
+        .iter()
+        .map(|task| task.token_count)
+        .sum::<usize>();
     let task_snapshot = spinner_tasks_snapshot_from_store();
     let random_spinner_verb = spinner_verb.read().clone();
     let leader_verb = if !props.message.trim().is_empty() {
@@ -761,12 +735,11 @@ pub fn SpinnerWithVerb(
     } else {
         random_spinner_verb.clone()
     };
-    let tree_leader_verb = Some(leader_verb.clone());
     let leader_is_idle = props.leader_is_idle;
-    let effective_next_task = props
-        .next_task
-        .clone()
-        .or_else(|| task_snapshot.next_pending_subject.clone());
+    // @nyan: no fallback to the task list's next pending subject — the todo
+    // panel mounted right below the spinner already lists it
+    // (docs/nyan/tui.md §4.2), so `Next: …` would duplicate it.
+    let effective_next_task = props.next_task.clone();
     let effective_effort_suffix = props.effort_suffix.clone().or_else(|| {
         let suffix = crate::utils::effort::get_effort_suffix(
             &crate::utils::model::model::get_main_loop_model(),
@@ -874,21 +847,6 @@ pub fn SpinnerWithVerb(
                 View(flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, margin_top: 1u32, width: 100pct) {
                     Text(content: idle_text, color: theme.inactive, wrap: TextWrap::NoWrap)
                 }
-                #(if show_teammate_tree {
-                    Some(element! {
-                        TeammateSpinnerTree(
-                            tasks: teammate_tasks.clone(),
-                            selected_index: selected_index,
-                            is_in_selection_mode: is_in_selection_mode,
-                            all_idle: all_teammates_idle,
-                            viewing_teammate_id: viewing_agent_task_id.clone(),
-                            leader_verb: if leader_is_idle { None } else { tree_leader_verb.clone() },
-                            leader_token_count: Some(estimated_token_count_from_chars(current_response_length)),
-                            leader_idle_text: if leader_is_idle { Some("Idle".to_string()) } else { None },
-                            show_preview: show_teammate_message_preview,
-                        )
-                    })
-                } else { None })
             }
         };
     }
@@ -904,21 +862,6 @@ pub fn SpinnerWithVerb(
                 View(flex_direction: FlexDirection::Row, flex_wrap: FlexWrap::Wrap, margin_top: 1u32, width: 100pct) {
                     Text(content: idle_text, color: theme.inactive, wrap: TextWrap::NoWrap)
                 }
-                #(if show_teammate_tree {
-                    Some(element! {
-                        TeammateSpinnerTree(
-                            tasks: teammate_tasks.clone(),
-                            selected_index: selected_index,
-                            is_in_selection_mode: is_in_selection_mode,
-                            all_idle: all_teammates_idle,
-                            viewing_teammate_id: viewing_agent_task_id.clone(),
-                            leader_verb: None::<String>,
-                            leader_token_count: Some(estimated_token_count_from_chars(current_response_length)),
-                            leader_idle_text: Some("Idle".to_string()),
-                            show_preview: show_teammate_message_preview,
-                        )
-                    })
-                } else { None })
             }
         };
     }
@@ -1118,21 +1061,6 @@ pub fn SpinnerWithVerb(
                         byline
                     })
                 }
-                #(if show_teammate_tree {
-                    Some(element! {
-                        TeammateSpinnerTree(
-                            tasks: teammate_tasks.clone(),
-                            selected_index: selected_index,
-                            is_in_selection_mode: is_in_selection_mode,
-                            all_idle: all_teammates_idle,
-                            viewing_teammate_id: viewing_agent_task_id.clone(),
-                            leader_verb: tree_leader_verb.clone(),
-                            leader_token_count: Some(estimated_token_count_from_chars(current_response_length)),
-                            leader_idle_text: if leader_is_idle { Some("Idle".to_string()) } else { None },
-                            show_preview: show_teammate_message_preview,
-                        )
-                    })
-                } else { None })
                 #(if let Some(budget) = &props.budget_text {
                     Some(element! { MessageResponse(content: budget.clone(), color: Some(theme.inactive)) })
                 } else { None })
@@ -1186,21 +1114,6 @@ pub fn SpinnerWithVerb(
                     byline
                 })
             }
-            #(if show_teammate_tree {
-                Some(element! {
-                    TeammateSpinnerTree(
-                        tasks: teammate_tasks.clone(),
-                        selected_index: selected_index,
-                        is_in_selection_mode: is_in_selection_mode,
-                        all_idle: all_teammates_idle,
-                        viewing_teammate_id: viewing_agent_task_id.clone(),
-                        leader_verb: tree_leader_verb.clone(),
-                        leader_token_count: Some(estimated_token_count_from_chars(current_response_length)),
-                        leader_idle_text: if leader_is_idle { Some("Idle".to_string()) } else { None },
-                        show_preview: show_teammate_message_preview,
-                    )
-                })
-            } else { None })
             #(if let Some(budget) = &props.budget_text {
                 Some(element! { MessageResponse(content: budget.clone(), color: Some(theme.inactive)) })
             } else { None })
@@ -1455,7 +1368,6 @@ mod tests {
     fn seed_teammate_tasks(
         initial: &mut crate::state::app_state_store::AppState,
         snapshots: Vec<TeammateTaskSnapshot>,
-        show_tree: bool,
     ) {
         for snapshot in snapshots {
             std::sync::Arc::make_mut(&mut initial.tasks).insert(
@@ -1464,9 +1376,6 @@ mod tests {
                     snapshot,
                 )),
             );
-        }
-        if show_tree {
-            initial.expanded_view = crate::state::app_state_store::ExpandedView::Teammates;
         }
     }
 
@@ -1491,7 +1400,7 @@ mod tests {
         }];
         let test_store = hooks.use_const(move || {
             let mut initial = crate::state::app_state_store::AppState::default();
-            seed_teammate_tasks(&mut initial, snapshots, true);
+            seed_teammate_tasks(&mut initial, snapshots);
             initial.show_teammate_message_preview = true;
             crate::state::store::AppStore::new(initial, None)
         });
@@ -1512,20 +1421,16 @@ mod tests {
         }
     }
 
+    // @nyan: slice E removed the spinner's teammate tree; teammates now render
+    // in the agent panel (`components/agent_panel.rs`). This harness keeps the
+    // running-teammate AppState fixture the foregrounded-verb tests build on.
     #[test]
-    fn spinner_with_verb_reads_app_tasks_for_tree() {
+    fn spinner_with_verb_ignores_the_removed_teammate_tree() {
         let text = render_text(element!(TeammateSpinnerHarness));
 
         assert!(text.contains("Thinking…"), "canvas=\n{text}");
-        assert!(text.contains("team-lead"), "canvas=\n{text}");
-        assert!(text.contains("@alpha"), "canvas=\n{text}");
-        assert!(
-            text.contains("Reviewing session restore"),
-            "canvas=\n{text}"
-        );
-        assert!(text.contains("2 tool uses"), "canvas=\n{text}");
-        assert!(text.contains("1.2k tokens"), "canvas=\n{text}");
-        assert!(text.contains("Checking preview line"), "canvas=\n{text}");
+        assert!(!text.contains("team-lead"), "canvas=\n{text}");
+        assert!(!text.contains("@alpha"), "canvas=\n{text}");
     }
 
     #[component]
@@ -1540,7 +1445,7 @@ mod tests {
         }];
         let test_store = hooks.use_const(move || {
             let mut initial = crate::state::app_state_store::AppState::default();
-            seed_teammate_tasks(&mut initial, snapshots, false);
+            seed_teammate_tasks(&mut initial, snapshots);
             crate::state::store::AppStore::new(initial, None)
         });
 
@@ -1581,7 +1486,7 @@ mod tests {
         }];
         let test_store = hooks.use_const(move || {
             let mut initial = crate::state::app_state_store::AppState::default();
-            seed_teammate_tasks(&mut initial, snapshots, true);
+            seed_teammate_tasks(&mut initial, snapshots);
             crate::state::store::AppStore::new(initial, None)
         });
 
@@ -1610,9 +1515,8 @@ mod tests {
             text.contains("✻ Idle · teammates running"),
             "canvas=\n{text}"
         );
-        assert!(text.contains("team-lead"), "canvas=\n{text}");
-        assert!(text.contains("@gamma"), "canvas=\n{text}");
-        assert!(text.contains("Checking worker state"), "canvas=\n{text}");
+        assert!(!text.contains("team-lead"), "canvas=\n{text}");
+        assert!(!text.contains("@gamma"), "canvas=\n{text}");
         assert!(!text.contains("Thinking…"), "canvas=\n{text}");
     }
 
@@ -1643,7 +1547,7 @@ mod tests {
         ];
         let test_store = hooks.use_const(move || {
             let mut initial = crate::state::app_state_store::AppState::default();
-            seed_teammate_tasks(&mut initial, snapshots, true);
+            seed_teammate_tasks(&mut initial, snapshots);
             initial.viewing_agent_task_id = Some("task-delta".to_string());
             crate::state::store::AppStore::new(initial, None)
         });
@@ -1670,9 +1574,9 @@ mod tests {
         let text = render_text(element!(ForegroundedIdleTeammateSpinnerHarness));
 
         assert!(text.contains("✻ Worked for 2m 5s"), "canvas=\n{text}");
-        assert!(text.contains("team-lead: Idle"), "canvas=\n{text}");
-        assert!(text.contains("@delta"), "canvas=\n{text}");
-        assert!(text.contains("@epsilon"), "canvas=\n{text}");
+        assert!(!text.contains("team-lead"), "canvas=\n{text}");
+        assert!(!text.contains("@delta"), "canvas=\n{text}");
+        assert!(!text.contains("@epsilon"), "canvas=\n{text}");
         assert!(!text.contains("● Thinking"), "canvas=\n{text}");
     }
 
@@ -1703,7 +1607,7 @@ mod tests {
         ];
         let test_store = hooks.use_const(move || {
             let mut initial = crate::state::app_state_store::AppState::default();
-            seed_teammate_tasks(&mut initial, snapshots, true);
+            seed_teammate_tasks(&mut initial, snapshots);
             initial.viewing_agent_task_id = Some("task-zeta".to_string());
             crate::state::store::AppStore::new(initial, None)
         });
@@ -1731,10 +1635,9 @@ mod tests {
         let text = render_text(element!(ForegroundedActiveTeammateSpinnerHarness));
 
         assert!(text.contains("Auditing teammate work…"), "canvas=\n{text}");
-        assert!(text.contains("team-lead: Planning…"), "canvas=\n{text}");
-        assert!(text.contains("@zeta"), "canvas=\n{text}");
-        assert!(text.contains("@eta"), "canvas=\n{text}");
-        assert!(text.contains("Checking parallel work…"), "canvas=\n{text}");
+        assert!(!text.contains("team-lead"), "canvas=\n{text}");
+        assert!(!text.contains("@zeta"), "canvas=\n{text}");
+        assert!(!text.contains("@eta"), "canvas=\n{text}");
         assert!(text.contains("(esc to interrupt zeta)"), "canvas=\n{text}");
         assert!(!text.contains("Thinking…"), "canvas=\n{text}");
         assert!(!text.contains("(0s"), "canvas=\n{text}");
@@ -1765,7 +1668,7 @@ mod tests {
             });
             let mut initial = crate::state::app_state_store::AppState::default();
             initial.settings = std::sync::Arc::new(settings);
-            seed_teammate_tasks(&mut initial, snapshots, true);
+            seed_teammate_tasks(&mut initial, snapshots);
             initial.viewing_agent_task_id = Some("task-theta".to_string());
             crate::state::store::AppStore::new(initial, None)
         });
@@ -1793,7 +1696,7 @@ mod tests {
         ));
 
         assert!(text.contains("● Reviewing…"), "canvas=\n{text}");
-        assert!(text.contains("@theta"), "canvas=\n{text}");
+        assert!(!text.contains("@theta"), "canvas=\n{text}");
         assert!(
             !text.contains("Activity belongs in the tree…"),
             "official foregrounded teammate fallback uses spinnerVerb/random verb, not last activity; canvas=\n{text}"

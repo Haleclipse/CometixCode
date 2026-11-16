@@ -26,7 +26,6 @@ pub enum ExpandedView {
     #[default]
     None,
     Tasks,
-    Teammates,
 }
 
 /// Maps to: CC `AppStateStore.ts` `FooterItem` — which footer pill is focused
@@ -40,6 +39,10 @@ pub enum FooterItem {
     Bagel,
     Teams,
     Companion,
+    /// @nyan: the agent panel's footer stop (docs/nyan/tui.md §6.2). Distinct
+    /// from `Tasks` so the panel's row navigation and the height-degraded pill
+    /// fallback keep unambiguous Enter semantics.
+    AgentPanel,
 }
 
 impl FooterItem {
@@ -51,6 +54,7 @@ impl FooterItem {
             Self::Bagel => "bagel",
             Self::Teams => "teams",
             Self::Companion => "companion",
+            Self::AgentPanel => "agent-panel",
         }
     }
 }
@@ -518,9 +522,23 @@ pub struct AppState {
     pub effort_value: Option<crate::utils::effort::Effort>,
     /// CC cacheMissAckedAtOutputTokens: confirmation watermark.
     pub cache_miss_acked_at_output_tokens: i64,
-    /// Maps to: CC `AppState.expandedView` — persisted as the legacy
-    /// `showExpandedTodos`/`showSpinnerTree` globalConfig pair.
+    /// Maps to: CC `AppState.expandedView`.
+    ///
+    /// @nyan: session-only. CC persists it as the legacy
+    /// `showExpandedTodos`/`showSpinnerTree` globalConfig pair, but startup never
+    /// read it back (`AppState::default` is always `None`), so the write was dead.
+    /// `Tasks` is what the todo panel reads as "expanded".
     pub expanded_view: ExpandedView,
+    /// @nyan: bumped by TaskCreate / TaskUpdate after they write the task list
+    /// to disk. The todo panel re-reads the list only when this changes.
+    pub task_list_revision: u64,
+    /// @nyan: set when Ctrl+T collapses the todo panel, cleared when it expands
+    /// again. While set, TaskCreate / TaskUpdate do not auto-expand the panel.
+    pub todo_auto_expand_suppressed: bool,
+    /// @nyan: signature (`todo_panel::task_signature`) of the all-done task list
+    /// that a user turn already dismissed. The panel hides while the list still
+    /// has this signature; any change to an id or status makes it reappear.
+    pub todo_cleared_signature: Option<u64>,
     /// Maps to: CC `AppState.settings` (AppStateStore.ts:90) — the merged
     /// settings snapshot, replaced wholesale by `apply_settings_change` when
     /// settings files change on disk (CC `applySettingsChange`).
@@ -535,12 +553,6 @@ pub struct AppState {
     /// is equivalent to CC's reference projection (B3 review A-7,
     /// permissions.ts:974 + denialTracking.ts:33).
     pub denial_tracking: Option<crate::utils::permissions::denial_tracking::DenialTrackingState>,
-    /// Maps to: CC AppStateStore.ts:94 statusLineText. Plain
-    /// `string | undefined` — configured/padding are derived from
-    /// `AppState.settings` at the read sites (CC StatusLine.tsx:59/:391).
-    /// Written by the async statusline-command future at App mount; read
-    /// by the prompt footer.
-    pub status_line_text: Option<String>,
     /// Maps to: CC `AppState.notifications` — `{current, queue}` consumed by
     /// the prompt-input notification row.
     pub notifications: Arc<crate::context::notifications::NotificationsState>,
@@ -618,6 +630,23 @@ pub struct AppState {
     /// Maps to: CC `AppState.footerSelection` — focused footer pill, or
     /// `None` when the prompt owns focus.
     pub footer_selection: Option<FooterItem>,
+    /// @nyan: selected row inside the agent panel while `footer_selection` is
+    /// `FooterItem::AgentPanel` (docs/nyan/tui.md §6.2). Clamped by the panel
+    /// whenever the row list shrinks.
+    pub agent_panel_selected: usize,
+    /// @nyan: the rows the agent panel is currently showing, in display
+    /// order. Published by the panel so footer navigation and Enter routing
+    /// read the same list the user sees.
+    pub agent_panel_items: Arc<Vec<crate::components::agent_panel::AgentPanelItem>>,
+    /// @nyan: number of rows that survived the panel's lifecycle, before the
+    /// height plan truncates them. PromptInput feeds it to the same
+    /// `agent_panel::plan_panel` the panel draws with, so the footer height
+    /// and the drawn panel agree (docs/nyan/tui.md §7).
+    pub agent_panel_row_count: usize,
+    /// @nyan: epoch-ms deadline for the mode-row `/tasks to see agents` hint.
+    /// Armed when a running row completes (docs/nyan/tui.md §6.1); the panel
+    /// clears it on its first tick after expiry.
+    pub agent_panel_finished_hint_until_ms: Option<u64>,
     /// Maps to: CC `AppState.standaloneAgentContext` — non-swarm custom
     /// name/color for the swarm banner (resume / agent metadata).
     /// Value retention (no Arc): two-field small object; all write sites
@@ -678,6 +707,9 @@ pub struct AppState {
     // ideSelection, and the auto-updater values are component-local (CC
     // Notifications props), threaded to the height budget by their
     // REPL/PromptInput owners.
+    /// @nyan: TUI info-line metrics (docs/nyan/tui.md §3.1, §5). Collected
+    /// here; rendered by later slices. Not a CC field.
+    pub footer_metrics: super::footer_metrics::FooterMetrics,
 }
 
 impl Default for AppState {
@@ -704,11 +736,12 @@ impl Default for AppState {
             effort_value: None,
             cache_miss_acked_at_output_tokens: -1,
             expanded_view: ExpandedView::None,
+            task_list_revision: 0,
+            todo_auto_expand_suppressed: false,
+            todo_cleared_signature: None,
             settings: Arc::new(crate::utils::settings::SettingsJson::default()),
             tool_permission_context: Arc::new(ToolPermissionContext::default()),
             denial_tracking: None,
-            // Maps to: CC AppStateStore.ts:475 `statusLineText: undefined`.
-            status_line_text: None,
             notifications: Arc::new(crate::context::notifications::NotificationsState::default()),
             elicitation: Arc::new(ElicitationState::default()),
             mcp: Arc::new(McpState::default()),
@@ -733,6 +766,10 @@ impl Default for AppState {
             prompt_suggestion_enabled: false,
             prompt_suggestion: PromptSuggestionState::default(),
             footer_selection: None,
+            agent_panel_selected: 0,
+            agent_panel_items: Arc::new(Vec::new()),
+            agent_panel_row_count: 0,
+            agent_panel_finished_hint_until_ms: None,
             standalone_agent_context: None,
             foregrounded_task_id: None,
             inbox: Arc::new(crate::hooks::use_inbox_poller::InboxState::default()),
@@ -744,6 +781,7 @@ impl Default for AppState {
             spinner_tip: None,
             todos: Arc::new(std::collections::BTreeMap::new()),
             tasks: Arc::new(std::collections::BTreeMap::new()),
+            footer_metrics: super::footer_metrics::FooterMetrics::default(),
         }
     }
 }

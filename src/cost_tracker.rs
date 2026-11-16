@@ -1,4 +1,4 @@
-//! Maps to: CC `cost-tracker.ts` getters used by StatusLine / session stats.
+//! Maps to: CC `cost-tracker.ts` getters used by session stats.
 //!
 //! @nyan: every completed model request is recorded once, at the request layer
 //! (`services/api/request.rs` and `utils/side_query.rs`), through

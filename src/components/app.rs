@@ -11,7 +11,7 @@
 //! fallback and no ambient store context read: Contract B clause 2 makes
 //! `AppStateProvider` the SOLE source of the `AppStore` context.
 //! Setup gates complete in [`crate::main`] before this component is mounted.
-//! MCP/LSP/statusline startup futures live in [`crate::main`] (CC `main.tsx`).
+//! MCP/LSP startup futures live in [`crate::main`] (CC `main.tsx`).
 //!
 //! Capability grades: `docs/ENTRY_OWNERSHIP_AUDIT.md`.
 
@@ -160,7 +160,6 @@ mod tests {
             crate::main::build_initial_app_state(
                 &startup_settings.settings,
                 &startup_settings.errors,
-                true,
                 &crate::cli::CliConfig::default(),
             )
             .unwrap(),

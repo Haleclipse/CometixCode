@@ -333,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn all_events_enabled_emits_known_hook_events_but_not_statusline() {
+    fn all_events_enabled_emits_known_hook_events_but_not_unknown_names() {
         let _guard = TEST_LOCK.lock().unwrap();
         clear_hook_event_state();
         let events = Arc::new(Mutex::new(Vec::new()));
@@ -341,7 +341,7 @@ mod tests {
         set_all_hook_events_enabled(true);
 
         emit_hook_started("1", "pre", "PreToolUse");
-        emit_hook_started("2", "status", "StatusLine");
+        emit_hook_started("2", "status", "NotAHookEvent");
 
         let events = events.lock().expect("events mutex");
         assert_eq!(events.len(), 1);

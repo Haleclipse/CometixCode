@@ -2,7 +2,7 @@
 //!
 //! Called from [`crate::entrypoints::cli`] / [`crate::cli::dispatch`] after
 //! fast-paths and `CliConfig` gating. Builds `initialState` + typed `ReplProps`,
-//! creates `AppStore`, spawns MCP/LSP/statusline startup (Duty #17–18), then
+//! creates `AppStore`, spawns MCP/LSP startup (Duty #17–18), then
 //! delegates direct REPL mounting to [`crate::repl_launcher::launch_repl`] or
 //! bare-resume mounting to [`crate::dialog_launchers::launch_resume_chooser`].
 //!
@@ -13,7 +13,6 @@ use crate::bootstrap;
 use crate::commands;
 use crate::components::spinner::Spinner;
 use crate::hooks::notifs::startup::startup_notifications;
-use crate::hooks::notifs::statusline::status_line_trust_blocked_notification;
 use crate::interactive_helpers::{
     SetupScreensSnapshot, default_setup_screens_snapshot, exit_with_error, project_config_for_cwd,
     show_setup_screens,
@@ -179,23 +178,14 @@ fn resolve_thinking_launch(
 fn build_interactive_launch(
     settings: &SettingsJson,
     settings_errors: &[ValidationError],
-    workspace_trusted: bool,
     cli: &crate::cli::CliConfig,
 ) -> anyhow::Result<InteractiveLaunch> {
-    build_interactive_launch_with_system_prompts(
-        settings,
-        settings_errors,
-        workspace_trusted,
-        cli,
-        None,
-        None,
-    )
+    build_interactive_launch_with_system_prompts(settings, settings_errors, cli, None, None)
 }
 
 fn build_interactive_launch_with_system_prompts(
     settings: &SettingsJson,
     settings_errors: &[ValidationError],
-    workspace_trusted: bool,
     cli: &crate::cli::CliConfig,
     system_prompt: Option<Arc<str>>,
     append_system_prompt: Option<Arc<str>>,
@@ -203,13 +193,8 @@ fn build_interactive_launch_with_system_prompts(
     let thinking = resolve_thinking_launch(settings, cli);
     let agents = resolve_agent_launch(settings, cli);
     apply_launch_model_override(cli, &agents)?;
-    let initial_state = build_initial_app_state_with_agents(
-        settings,
-        settings_errors,
-        workspace_trusted,
-        cli,
-        &agents,
-    )?;
+    let initial_state =
+        build_initial_app_state_with_agents(settings, settings_errors, cli, &agents)?;
     Ok(InteractiveLaunch {
         initial_state,
         repl_props: ReplProps {
@@ -232,10 +217,9 @@ fn build_interactive_launch_with_system_prompts(
 pub fn build_initial_app_state(
     settings: &SettingsJson,
     settings_errors: &[ValidationError],
-    workspace_trusted: bool,
     cli: &crate::cli::CliConfig,
 ) -> anyhow::Result<AppState> {
-    Ok(build_interactive_launch(settings, settings_errors, workspace_trusted, cli)?.initial_state)
+    Ok(build_interactive_launch(settings, settings_errors, cli)?.initial_state)
 }
 
 /// The headless store's `AppState` (CC `main.tsx:3701-3731`
@@ -245,11 +229,10 @@ pub fn build_initial_app_state(
 pub(crate) fn build_headless_initial_app_state(
     settings: &SettingsJson,
     settings_errors: &[ValidationError],
-    workspace_trusted: bool,
     cli: &crate::cli::CliConfig,
 ) -> anyhow::Result<AppState> {
     let agents = resolve_agent_launch(settings, cli);
-    build_initial_app_state_with_agents(settings, settings_errors, workspace_trusted, cli, &agents)
+    build_initial_app_state_with_agents(settings, settings_errors, cli, &agents)
 }
 
 /// The session's launch selection: the profile `--model` names (else the main
@@ -312,7 +295,6 @@ pub(crate) fn apply_headless_launch_model(
 fn build_initial_app_state_with_agents(
     settings: &SettingsJson,
     settings_errors: &[ValidationError],
-    workspace_trusted: bool,
     cli: &crate::cli::CliConfig,
     agents: &ResolvedAgentLaunch,
 ) -> anyhow::Result<AppState> {
@@ -466,10 +448,6 @@ fn build_initial_app_state_with_agents(
     );
     // Maps to: CC main.tsx initialState notifications seeding.
     let mut notifications = startup_notifications(settings, settings_errors);
-    if let Some(notification) = status_line_trust_blocked_notification(settings, workspace_trusted)
-    {
-        notifications.queue.push(notification);
-    }
     if let Some(text) = permission_notification {
         notifications
             .queue
@@ -683,10 +661,6 @@ pub fn register_mcp_connection_handlers(store: &AppStore) {
 ///   (CC `<MCPConnectionManager>` in `REPL.tsx:6134-6138`).
 /// - LSP notifications -> `use_lsp_initialization_notification`, called from
 ///   `Repl` (CC calls `useLspInitializationNotification()` there).
-/// - Statusline -> `components::status_line::use_status_line_update`
-///   (CC `StatusLine.tsx` is render and update in one component). That one was
-///   also a functional fix: computing it once from a launch snapshot left the
-///   status line stale for the whole session.
 pub fn start_settings_change_detector() {
     // CC `startDeferredPrefetches` returns early in bare mode (`main.tsx:651-661`).
     // `CLAUDE_CODE_EXIT_AFTER_FIRST_RENDER`, the other early return, is not
@@ -1615,7 +1589,6 @@ pub fn run(config: crate::cli::CliConfig) {
     let launch = match build_interactive_launch_with_system_prompts(
         &startup_settings.settings,
         &startup_settings.errors,
-        workspace_trusted,
         &config,
         system_prompt,
         append_system_prompt,
@@ -1650,8 +1623,8 @@ pub fn run(config: crate::cli::CliConfig) {
     //   * settings watch — DELETED at G5; ownership moved to the provider
     //     subscription (`AppState.tsx:104-110`) with the detector as the
     //     process-wide notifier (`main.tsx:689`).
-    //   * startup effects (MCP connect / LSP notification /
-    //     statusline) — OPEN RACE, corrected 2026-08-03 (P5 re-review). This
+    //   * startup effects (MCP connect / LSP notification) — OPEN RACE,
+    //     corrected 2026-08-03 (P5 re-review). This
     //     comment previously claimed the writes "land AFTER adoption and
     //     therefore DO notify". Nothing enforces that: the tasks are spawned
     //     before `render_loop()` onto a MULTI-THREADED runtime
@@ -2148,8 +2121,7 @@ mod tests {
         };
         let make_store = || {
             AppStore::new(
-                build_initial_app_state(&settings, &[], true, &crate::cli::CliConfig::default())
-                    .unwrap(),
+                build_initial_app_state(&settings, &[], &crate::cli::CliConfig::default()).unwrap(),
                 None,
             )
         };
@@ -2361,7 +2333,6 @@ mod tests {
             build_initial_app_state(
                 &startup_settings.settings,
                 &[],
-                true,
                 &crate::cli::CliConfig::default(),
             )
             .unwrap(),
@@ -2558,7 +2529,7 @@ mod tests {
             "Bash",
         ]));
         let settings = SettingsJson::default();
-        let state = build_initial_app_state(&settings, &[], true, &cli).unwrap();
+        let state = build_initial_app_state(&settings, &[], &cli).unwrap();
 
         assert_eq!(state.main_loop_profile.as_deref(), Some("fast"));
         assert_eq!(
@@ -2637,7 +2608,7 @@ mod tests {
             "claude-sonnet-4-6",
         ] {
             let cli = crate::cli::parse_cli_config(&argv(&["--model", model]));
-            let error = build_interactive_launch(&SettingsJson::default(), &[], true, &cli)
+            let error = build_interactive_launch(&SettingsJson::default(), &[], &cli)
                 .err()
                 .unwrap_or_else(|| panic!("{model} must be rejected"));
             assert!(
@@ -2683,7 +2654,6 @@ mod tests {
         let state = build_initial_app_state_with_agents(
             &SettingsJson::default(),
             &[],
-            true,
             &crate::cli::CliConfig::default(),
             &agents,
         )
@@ -2704,7 +2674,6 @@ mod tests {
         let launch = build_interactive_launch_with_system_prompts(
             &SettingsJson::default(),
             &[],
-            true,
             &cli,
             Some(Arc::<str>::from("custom system")),
             Some(Arc::<str>::from("append system")),
@@ -2726,8 +2695,7 @@ mod tests {
     #[test]
     fn processed_resume_is_applied_to_app_state_and_repl_initial_props_before_mount() {
         let cli = crate::cli::CliConfig::default();
-        let mut launch =
-            build_interactive_launch(&SettingsJson::default(), &[], true, &cli).unwrap();
+        let mut launch = build_interactive_launch(&SettingsJson::default(), &[], &cli).unwrap();
         let target = crate::commands::resume::ResumeTarget {
             session_id: "startup-resume".to_string(),
             project_path: Some("/tmp/project".to_string()),
@@ -2791,12 +2759,12 @@ mod tests {
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
         let cli = crate::cli::CliConfig::default();
 
-        let enabled = build_interactive_launch(&SettingsJson::default(), &[], true, &cli).unwrap();
+        let enabled = build_interactive_launch(&SettingsJson::default(), &[], &cli).unwrap();
         assert_eq!(enabled.repl_props.thinking_config, ThinkingConfig::Adaptive);
 
         let mut settings = SettingsJson::default();
         settings.always_thinking_enabled = Some(false);
-        let disabled = build_interactive_launch(&settings, &[], true, &cli).unwrap();
+        let disabled = build_interactive_launch(&settings, &[], &cli).unwrap();
         assert_eq!(
             disabled.repl_props.thinking_config,
             ThinkingConfig::Disabled
@@ -2809,7 +2777,7 @@ mod tests {
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
         let settings = SettingsJson::default();
         let cli = crate::cli::parse_cli_config(&argv(&["--max-thinking-tokens", "8000"]));
-        let launch = build_interactive_launch(&settings, &[], true, &cli).unwrap();
+        let launch = build_interactive_launch(&settings, &[], &cli).unwrap();
         assert_eq!(
             launch.repl_props.thinking_config,
             ThinkingConfig::Enabled {
@@ -2824,7 +2792,7 @@ mod tests {
             "--max-thinking-tokens",
             "8000",
         ]));
-        let launch = build_interactive_launch(&settings, &[], true, &cli).unwrap();
+        let launch = build_interactive_launch(&settings, &[], &cli).unwrap();
         assert_eq!(launch.repl_props.thinking_config, ThinkingConfig::Disabled);
     }
 
@@ -2834,7 +2802,7 @@ mod tests {
         crate::utils::process_env::set("MAX_THINKING_TOKENS", "4096tokens");
         let settings = SettingsJson::default();
         let cli = crate::cli::parse_cli_config(&argv(&["--max-thinking-tokens", "8000"]));
-        let launch = build_interactive_launch(&settings, &[], true, &cli).unwrap();
+        let launch = build_interactive_launch(&settings, &[], &cli).unwrap();
         assert_eq!(
             launch.repl_props.thinking_config,
             ThinkingConfig::Enabled {
@@ -2845,7 +2813,7 @@ mod tests {
         // A non-empty invalid env value is truthy in JS, parses to NaN, and
         // still prevents falling back to the CLI max-token value.
         crate::utils::process_env::set("MAX_THINKING_TOKENS", "invalid");
-        let launch = build_interactive_launch(&settings, &[], true, &cli).unwrap();
+        let launch = build_interactive_launch(&settings, &[], &cli).unwrap();
         assert_eq!(launch.repl_props.thinking_config, ThinkingConfig::Disabled);
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
     }

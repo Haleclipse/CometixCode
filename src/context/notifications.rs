@@ -423,7 +423,7 @@ impl NotificationsWriter {
     /// This is the ONLY thing that promotes the startup seed. CC seeds
     /// `notifications: { current: null, queue: initialNotifications }`
     /// (`main.tsx:4107-4110`), so without this call the launch-time rows
-    /// (`cli-permission-mode`, the statusline trust block, settings errors)
+    /// (`cli-permission-mode`, settings errors)
     /// sit in the queue until some unrelated add/remove happens to run
     /// `processQueue`. Splitting the promote out of the mutation (P5
     /// re-review) is only correct once this exists — the earlier comments

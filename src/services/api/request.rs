@@ -4004,6 +4004,14 @@ fn record_request_usage(
         usage,
         started_at.elapsed().as_millis() as u64,
     );
+    // @nyan: footer cache rate is the latest main-thread request, including
+    // the non-streaming fallback. tps is recorded only from the stream drain.
+    crate::state::footer_metrics::record_main_thread_cache(
+        &options.query_source,
+        &options.model,
+        options.profile.as_deref(),
+        usage,
+    );
 }
 
 async fn drain_stream_events(
@@ -4028,6 +4036,10 @@ async fn drain_stream_events(
     let mut stream_event_count: u64 = 0;
     let mut stream_event_types: Vec<&'static str> = Vec::new();
     let mut first_ttft_ms: Option<u64> = None;
+    // @nyan: decode rate starts at the first text/thinking/tool-input delta,
+    // not at first_ttft_ms (that stamp includes message_start).
+    let mut footer_watch =
+        crate::state::footer_metrics::StreamDecodeWatch::new(&options.query_source);
 
     // Maps to CC streaming idle timeout watchdog + stall detection
     // (`services/api/claude.ts` around STREAM_IDLE_TIMEOUT_MS / STALL_THRESHOLD_MS).
@@ -4236,6 +4248,7 @@ async fn drain_stream_events(
                     ));
                 }
                 *ir_usage = Some(delta_usage);
+                footer_watch.note_final_output_tokens(delta_usage.output_tokens);
                 usage = Some(super::ir_bridge::token_usage(&delta_usage));
                 if tx
                     .send(QueryModelStreamItem::AssistantDelta {
@@ -4252,6 +4265,9 @@ async fn drain_stream_events(
                 blocks.insert(index, ActiveRequestStreamBlock::from_block_start(block));
             }
             StreamEventKind::BlockDelta { index, delta } => {
+                if crate::state::footer_metrics::is_content_delta(&delta) {
+                    footer_watch.note_content_delta(now);
+                }
                 let delta_item = stream_item_for_delta(&delta);
                 if let Some(block) = blocks.get_mut(&index) {
                     block.push_ir_delta(delta);
@@ -4304,7 +4320,9 @@ async fn drain_stream_events(
                     }
                 }
             }
-            _ => {}
+            StreamEventKind::MessageStop => {
+                footer_watch.note_message_stop(now);
+            }
         }
     }
 

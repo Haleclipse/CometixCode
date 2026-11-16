@@ -1,21 +1,16 @@
 //! Maps to: CC `components/PromptInput/PromptInputFooter.tsx`.
 //!
 //! Nyan keeps this footer in normal document flow for the main-screen /
-//! native-scrollback path. It mirrors the official row ordering (optional
-//! status line, then left-side mode/hints plus right-side notifications) while
-//! keeping status-line command execution as the only command-hook special case,
-//! with no fullscreen/overlay behavior.
+//! native-scrollback path. It mirrors the official left-side mode/hints plus
+//! right-side notifications, with no fullscreen/overlay behavior.
 
 use super::{
     input_modes::PromptInputMode, notifications,
-    prompt_input_footer_left_side::PromptInputFooterLeftSide,
+    prompt_input_footer_left_side::PromptInputFooterLeftSide, prompt_input_info_line,
 };
-use crate::components::status_line::{
-    StatusLine, status_line_should_display, status_line_should_render,
-};
+use crate::components::agent_panel;
 use crate::context::notifications::{NotificationColor, NotificationSegment};
 use crate::hooks::use_credential_status::CredentialStatus;
-use crate::state::app_state::use_app_state;
 use crate::types::permissions::PermissionMode;
 use crate::utils::permissions::permission_mode::is_default_mode;
 use iocraft::prelude::*;
@@ -34,11 +29,6 @@ impl PromptFooterIndicator {
             .map(|segment| segment.text.as_str())
             .collect();
         Self { text, segments }
-    }
-
-    pub(crate) fn dim(text: impl Into<String>) -> Self {
-        let text = text.into();
-        Self::from_segments(vec![NotificationSegment::text(text).with_dim(true)])
     }
 
     pub(crate) fn inactive(text: impl Into<String>) -> Self {
@@ -86,15 +76,23 @@ pub struct FooterProps {
     pub vim_mode: Option<String>,
     pub mode: PromptInputMode,
     pub is_pasting: bool,
+    /// Terminal columns for the info line's narrow-screen degradation
+    /// (`docs/nyan/tui.md` §3.2). `None` reads the process terminal.
+    pub info_line_width: Option<u32>,
+    /// @nyan: the agent panel is mounted above the info line (§6). PromptInput
+    /// derives this from the same plan that feeds its height budget.
+    pub agent_panel_visible: bool,
+    /// @nyan: the panel owns the footer selection, so the mode row drops its
+    /// `↓ agents` hint (the panel's own key-hint line covers it).
+    pub agent_panel_focused: bool,
+    /// @nyan: a row completed within the last 30 s; the mode row shows
+    /// `/tasks to see agents` (§6.1).
+    pub finished_hint_active: bool,
 }
 
 /// Single source for "the left side renders a body row for footer pills"
 /// (bash banner, vim indicator, tasks pill, teammate pill). The HEIGHT BUDGET
-/// and the component's own render gate MUST share this predicate: the
-/// 2026-08-07 prompt-box collapse ("2 tasks" under a status line squeezing
-/// the input row out) was exactly this condition living in the component but
-/// not in the budget — the same divergence class as the status-line-loading
-/// collapse documented on `footer_height_for`.
+/// and the component's own render gate MUST share this predicate.
 pub fn footer_has_items(
     mode: PromptInputMode,
     vim_mode_active: bool,
@@ -148,8 +146,15 @@ fn footer_body_height_for(
     }
 }
 
-pub fn footer_height_for(
-    status_line_configured: bool,
+/// Total footer height: the agent panel (when visible), the built-in info line
+/// and the body row(s).
+///
+/// @nyan: the info line is always present (docs/nyan/tui.md §3.1) and is NOT
+/// affected by `suppress_hint`, so it is added outside the body predicate.
+/// The component below mounts it on exactly the same condition.
+/// `agent_panel_height` must come from [`agent_panel::PanelPlan::total_lines`]
+/// — the same value the panel renders.
+pub fn footer_height_with_panel(
     exit_hint_visible: bool,
     is_searching: bool,
     suppress_hint: bool,
@@ -157,41 +162,23 @@ pub fn footer_height_for(
     permission_mode: PermissionMode,
     notification_row_count: usize,
     has_footer_items: bool,
+    agent_panel_height: usize,
 ) -> usize {
-    // Height MUST track the same condition as the mount
-    // (`status_line_should_render`), not the text. They used to differ, on the
-    // theory that CC renders nothing while `statusLineText` is undefined — but
-    // CC reserves the row (`StatusLine.tsx:397-406`, and says why at `:393`:
-    // "a 0→1 row change when the command finishes steals a row"). Tracking the
-    // text here meant that while a configured status line was still loading,
-    // the hint row was already suppressed on its account
-    // (`PromptInputFooter.tsx:136` suppresses on SETTINGS) while its own row
-    // was not yet counted — so the footer budget went to zero and the prompt
-    // box collapsed.
-    usize::from(status_line_should_render(
-        status_line_configured,
-        exit_hint_visible,
-    )) + footer_body_height_for(
-        exit_hint_visible,
-        is_searching,
-        suppress_hint,
-        is_loading,
-        permission_mode,
-        notification_row_count,
-        has_footer_items,
-    )
+    agent_panel_height
+        + prompt_input_info_line::INFO_LINE_HEIGHT
+        + footer_body_height_for(
+            exit_hint_visible,
+            is_searching,
+            suppress_hint,
+            is_loading,
+            permission_mode,
+            notification_row_count,
+            has_footer_items,
+        )
 }
 
 #[component]
 pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-    // Maps to: CC StatusLine.tsx:195 `useAppState(s => s.statusLineText)` +
-    // PromptInputFooter.tsx:136 `statusLineShouldDisplay(settings)` — both
-    // re-derived from live AppState per render, never snapshotted.
-    let status_line_text =
-        use_app_state(&mut hooks, |state| state.status_line_text.clone()).unwrap_or_default();
-    let status_line_configured = use_app_state(&mut hooks, |state| {
-        status_line_should_display(&state.settings)
-    });
     // Rows `Notifications` renders directly (CC NotificationContent). Computed
     // here (component-owned) from the same contexts Notifications reads, so
     // every mount point — production or test harness — stays consistent.
@@ -240,9 +227,8 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
             )
         })
     };
-    let suppress_hint = props.suppress_hint || status_line_configured || props.is_searching;
+    let suppress_hint = props.suppress_hint || props.is_searching;
     let exit_hint_visible = props.exit_hint.is_some();
-    let has_status_line = status_line_should_render(status_line_configured, exit_hint_visible);
     let has_footer_items = footer_has_items(
         props.mode,
         props.vim_mode.is_some(),
@@ -261,27 +247,26 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
     let has_footer_row = footer_body_height > 0;
     let has_right_side = notification_row_count > 0;
 
-    if !has_status_line && !has_footer_row {
-        return element! { View(width: 0u32, height: 0u32) }.into_any();
+    // @nyan: the built-in info line replaces the deleted statusLine and is
+    // always present, independent of `suppress_hint` (docs/nyan/tui.md §3.1).
+    // `footer_height_for` counts exactly this row.
+    let info_line = element! {
+        prompt_input_info_line::InfoLine(
+            token_usage: token_usage,
+            width: props.info_line_width,
+        )
     }
+    .into_any();
+
+    // @nyan: the agent panel sits between the prompt input and the info line
+    // (§6, §2). It renders nothing when it has no rows or the terminal is too
+    // short, and the footer height budget reserves exactly its line count.
+    let agent_panel = element! { agent_panel::AgentPanel }.into_any();
 
     element! {
         View(flex_direction: FlexDirection::Column, width: 100pct) {
-            #(if has_status_line {
-                // Maps to: CC `PromptInputFooter.tsx:179-183` — the source
-                // passes `messagesRef`, `lastAssistantMessageId` and `vimMode`;
-                // StatusLine reads permission mode / model from AppState itself.
-                Some(element! {
-                    StatusLine(
-                        text: status_line_text.clone(),
-                        messages: Some(std::sync::Arc::clone(&props.messages)),
-                        last_assistant_message_id: crate::components::status_line::get_last_assistant_message_id(&props.messages),
-                        vim_mode: props.vim_mode.clone(),
-                    )
-                })
-            } else {
-                None
-            })
+            #(Some(agent_panel))
+            #(Some(info_line))
             #(if has_footer_row {
                 Some(element! {
                     View(
@@ -317,6 +302,10 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                                 // formula when the panel lands.
                                 tasks_selected: props.tasks_selected,
                                 teams_selected: props.teams_selected,
+                                // @nyan: agent-panel hints (§6).
+                                agent_panel_visible: props.agent_panel_visible,
+                                agent_panel_focused: props.agent_panel_focused,
+                                finished_hint_active: props.finished_hint_active,
                             )
                         }
                         #(if has_right_side {
@@ -359,28 +348,13 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
 mod tests {
     use super::*;
     use crate::context::notifications::{Notification, NotificationsState};
-    use crate::utils::settings::types::{SettingsJson, StatusLineSettings};
     use crate::utils::theme;
 
     #[test]
-    fn footer_height_matches_statusline_hint_and_notification_rows() {
+    fn footer_height_matches_hint_and_notification_rows() {
+        // @nyan: +1 for the built-in info line, which is always present.
         assert_eq!(
-            footer_height_for(
-                true,
-                false,
-                false,
-                true,
-                false,
-                PermissionMode::Default,
-                0,
-                false,
-            ),
-            1,
-            "configured status line with text suppresses shortcut hint and owns one row"
-        );
-        assert_eq!(
-            footer_height_for(
-                false,
+            footer_height_with_panel(
                 false,
                 false,
                 false,
@@ -388,27 +362,18 @@ mod tests {
                 PermissionMode::Default,
                 1,
                 false,
+                0,
             ),
-            1,
-            "loading hint and notification share the official footer row"
+            2,
+            "loading hint and notification share the official footer row above the info line"
         );
         assert_eq!(
-            footer_height_for(
-                false,
-                false,
-                false,
-                true,
-                false,
-                PermissionMode::Plan,
-                0,
-                false,
-            ),
-            1,
+            footer_height_with_panel(false, false, true, false, PermissionMode::Plan, 0, false, 0),
+            2,
             "active permission mode renders even when shortcut hints are suppressed"
         );
         assert_eq!(
-            footer_height_for(
-                false,
+            footer_height_with_panel(
                 false,
                 false,
                 true,
@@ -416,17 +381,18 @@ mod tests {
                 PermissionMode::Default,
                 2,
                 false,
+                0,
             ),
-            2,
-            "right-side notifications keep their stacked footer rows"
+            3,
+            "right-side status indicators keep their official stacked footer rows"
         );
     }
 
     #[test]
-    fn footer_height_does_not_reserve_an_empty_remote_status_row() {
+    fn footer_height_adds_the_agent_panel_rows_above_the_info_line() {
+        // No body row: panel + info line exactly.
         assert_eq!(
-            footer_height_for(
-                false,
+            footer_height_with_panel(
                 false,
                 false,
                 true,
@@ -434,20 +400,110 @@ mod tests {
                 PermissionMode::Default,
                 0,
                 false,
+                5,
             ),
-            0,
+            6,
+            "agent panel rows precede the always-present info line"
+        );
+        // With a body row: panel + info line + body row.
+        assert_eq!(
+            footer_height_with_panel(
+                false,
+                false,
+                false,
+                false,
+                PermissionMode::Default,
+                0,
+                true,
+                3,
+            ),
+            5
         );
     }
 
+    #[derive(Default, Props)]
+    struct FooterWithAgentPanelProps {
+        store: Option<crate::state::store::AppStore>,
+        agent_panel_visible: bool,
+    }
+
+    #[component]
+    fn FooterWithAgentPanel(
+        props: &FooterWithAgentPanelProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
+        let store = hooks.use_const(|| props.store.clone().expect("footer probe store"));
+        let agent_panel_visible = props.agent_panel_visible;
+        element! {
+            ContextProvider(value: Context::owned(*theme::current())) {
+                crate::state::app_state::AppStateProvider(
+                    prebuilt_store: Some(store),
+                    children: crate::state::app_state::ProviderChildren::new(move || element! {
+                        Footer(
+                            suppress_hint: false,
+                            agent_panel_visible: agent_panel_visible,
+                        )
+                    }.into_any()),
+                )
+            }
+        }
+    }
+
+    fn shell_task_store() -> crate::state::store::AppStore {
+        use crate::state::app_state_store::TaskState;
+        use std::sync::Arc;
+        let mut state = crate::state::app_state_store::AppState::default();
+        state.tasks = Arc::new(std::collections::BTreeMap::from([(
+            "shell-1".to_string(),
+            Arc::new(TaskState::LocalShell(
+                crate::tasks::local_shell_task::guards::LocalShellTaskState {
+                    id: "shell-1".into(),
+                    task_type: "local_bash".into(),
+                    status: "running".into(),
+                    description: "a local shell".into(),
+                    command: "cargo test --lib".into(),
+                    result: None,
+                    notified: false,
+                    shell_command: None,
+                    last_reported_total_lines: 0,
+                    is_backgrounded: true,
+                    agent_id: None,
+                    tool_use_id: None,
+                    kind: None,
+                    start_time_ms: 1,
+                    end_time_ms: None,
+                },
+            )),
+        )]));
+        crate::state::store::AppStore::new(state, None)
+    }
+
     #[test]
-    fn footer_height_budgets_the_pill_row_alongside_a_status_line() {
-        // Regression: the 2026-08-07 prompt-box collapse. A configured status
-        // line suppresses hints (budget row 1 = status line), and the tasks
-        // pill renders a body row the old budget did not count — the input
-        // row got squeezed out. The pill predicate must add the body row.
+    fn footer_renders_the_agent_panel_above_the_info_line_and_mode_row() {
+        let canvas = element!(FooterWithAgentPanel(
+            store: Some(shell_task_store()),
+            agent_panel_visible: true,
+        ))
+        .render(Some(100));
+        let text = canvas.to_string();
+        let lines = text.lines().collect::<Vec<_>>();
         assert_eq!(
-            footer_height_for(
-                true,
+            lines.len(),
+            3,
+            "panel, info line, mode row; canvas=\n{text}"
+        );
+        assert!(lines[0].contains("cargo test --lib"), "canvas=\n{text}");
+        // The middle line is the always-present info line (directory/model
+        // segments vary with the environment).
+        assert!(!lines[1].contains("cargo test"), "canvas=\n{text}");
+        assert!(lines[2].contains("? for shortcuts"), "canvas=\n{text}");
+        assert!(lines[2].contains("↓ agents"), "canvas=\n{text}");
+    }
+
+    #[test]
+    fn footer_height_budgets_the_pill_row() {
+        assert_eq!(
+            footer_height_with_panel(
                 false,
                 false,
                 true,
@@ -455,115 +511,32 @@ mod tests {
                 PermissionMode::Default,
                 0,
                 true,
+                0,
             ),
             2,
-            "status line row + footer-pill body row must both be budgeted"
-        );
-        assert_eq!(
-            footer_height_for(
-                false,
-                false,
-                false,
-                true,
-                false,
-                PermissionMode::Default,
-                0,
-                true,
-            ),
-            1,
-            "footer pills alone own one body row"
+            "footer pills own one body row plus the info line"
         );
         assert!(footer_has_items(PromptInputMode::Prompt, false, 2, 0));
         assert!(footer_has_items(PromptInputMode::Bash, false, 0, 0));
         assert!(!footer_has_items(PromptInputMode::Prompt, false, 0, 0));
     }
 
-    #[component]
-    fn FooterWithStatusLine(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-        let status_line_store = hooks.use_state(|| {
-            let mut initial = crate::state::app_state_store::AppState::default();
-            initial.status_line_text = Some("\u{1b}[32mrepo main\u{1b}[0m".to_string());
-            // Hint suppression + padding derive from settings (CC
-            // PromptInputFooter.tsx:136 / StatusLine.tsx:391).
-            initial.settings = std::sync::Arc::new(SettingsJson {
-                status_line: Some(StatusLineSettings {
-                    kind: Some("command".to_string()),
-                    command: "printf ok".to_string(),
-                    padding: Some(1),
-                }),
-                ..Default::default()
-            });
-            crate::state::store::AppStore::new(initial, None)
-        });
-        element! {
-            ContextProvider(value: Context::owned(*theme::current())) {
-                crate::state::app_state::AppStateProvider(
-                    prebuilt_store: Some(status_line_store.read().clone()),
-                    children: crate::state::app_state::ProviderChildren::new(|| element! {
-                        Footer(
-                            suppress_hint: false,
-                            permission_mode: PermissionMode::Default,
-                        )
-                    }.into_any()),
-                )
-            }
-        }
-    }
-
     #[test]
-    fn footer_renders_statusline_above_left_side_and_suppresses_default_hint() {
-        let text = element!(FooterWithStatusLine).render(Some(80)).to_string();
-
-        assert!(text.contains("repo main"), "canvas=\n{text}");
-        assert!(!text.contains("? for shortcuts"), "canvas=\n{text}");
-    }
-
-    #[component]
-    fn FooterWithMixedStatusLine(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-        let status_line_store = hooks.use_state(|| {
-            let mut initial = crate::state::app_state_store::AppState::default();
-            initial.status_line_text = Some("plain \u{1b}[32mgreen\u{1b}[0m".to_string());
-            // Configured status line with no padding (CC StatusLine.tsx:391
-            // `?? 0` default keeps column 0 assertions valid).
-            initial.settings = std::sync::Arc::new(SettingsJson {
-                status_line: Some(StatusLineSettings {
-                    kind: Some("command".to_string()),
-                    command: "printf ok".to_string(),
-                    padding: None,
-                }),
-                ..Default::default()
-            });
-            crate::state::store::AppStore::new(initial, None)
-        });
-        element! {
-            ContextProvider(value: Context::owned(*theme::current())) {
-                crate::state::app_state::AppStateProvider(
-                    prebuilt_store: Some(status_line_store.read().clone()),
-                    children: crate::state::app_state::ProviderChildren::new(|| element! {
-                        Footer(
-                            suppress_hint: true,
-                            permission_mode: PermissionMode::Default,
-                        )
-                    }.into_any()),
-                )
-            }
-        }
-    }
-
-    #[test]
-    fn footer_statusline_uses_inactive_default_color_without_forcing_dim() {
-        let theme = *theme::current();
-        let canvas = element!(FooterWithMixedStatusLine).render(Some(80));
-        let text = canvas.to_string();
-
-        assert!(text.starts_with("plain green"), "canvas=\n{text}");
-        let plain_style = canvas.resolved_text_style(0, 0).expect("plain style");
-        assert_eq!(plain_style.color, Some(theme.inactive));
-        assert_eq!(plain_style.weight, Weight::Normal);
-
-        let green_style = canvas.resolved_text_style(6, 0).expect("green style");
-        assert_eq!(green_style.color, Some(Color::DarkGreen));
-        assert_eq!(green_style.weight, Weight::Normal);
+    fn footer_height_keeps_the_info_line_when_no_body_row_renders() {
+        assert_eq!(
+            footer_height_with_panel(
+                false,
+                false,
+                true,
+                false,
+                PermissionMode::Default,
+                0,
+                false,
+                0,
+            ),
+            1,
+            "the info line survives a fully suppressed hint row"
+        );
     }
 
     #[component]
@@ -689,7 +662,10 @@ mod tests {
 
         assert!(text.contains("? for shortcuts"), "canvas=\n{text}");
         assert!(text.contains("Debug mode"), "canvas=\n{text}");
-        assert!(text.contains("77 tokens"), "canvas=\n{text}");
+        // @nyan: the verbose `N tokens` row moved to the info line (tui.md
+        // §3.4), so the debug rows no longer carry it.
+        assert!(!text.contains("77 tokens"), "canvas=\n{text}");
+        assert!(!text.contains(" tokens"), "canvas=\n{text}");
     }
 
     #[derive(Default, Props)]

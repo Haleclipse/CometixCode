@@ -29,7 +29,7 @@
 //! `replace_with`, either
 //! directly (CC: bare `setAppState`, e.g. elicitation) or via a writer handle
 //! obtained from a hook (`NotificationsWriter` ≙ CC `useNotifications()`
-//! closures, `McpWriter` ≙ CC `updateServer`). statusline/elicitation/
+//! closures, `McpWriter` ≙ CC `updateServer`). elicitation/
 //! notifications/mcp/config/
 //! footer_selection/view_selection_mode/
 //! selected_ip_agent_index/coordinator_task_index/
@@ -54,6 +54,7 @@
 
 pub mod app_state;
 pub mod app_state_store;
+pub mod footer_metrics;
 pub mod on_change_app_state;
 pub mod selectors;
 pub mod store;

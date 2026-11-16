@@ -14,7 +14,10 @@ use std::collections::BTreeMap;
 
 pub const MAX_OUTPUT_TOKENS_FOR_SUMMARY: i64 = 20_000;
 pub const AUTOCOMPACT_BUFFER_TOKENS: i64 = 13_000;
-pub const WARNING_THRESHOLD_BUFFER_TOKENS: i64 = 20_000;
+// @nyan: 40k so the footer's two-step warning (warning 40k before the
+// threshold, error 20k before) has distinct bands. CC used 20k/20k, where both
+// states fired together (docs/nyan/tui.md §3.3).
+pub const WARNING_THRESHOLD_BUFFER_TOKENS: i64 = 40_000;
 pub const ERROR_THRESHOLD_BUFFER_TOKENS: i64 = 20_000;
 pub const MANUAL_COMPACT_BUFFER_TOKENS: i64 = 3_000;
 pub const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES: u32 = 3;
@@ -429,6 +432,39 @@ mod tests {
         );
         assert!(state.percent_left > 100);
         crate::utils::process_env::remove("NYAN_BLOCKING_LIMIT_OVERRIDE");
+    }
+
+    /// @nyan: the footer's two-level context color needs two distinct bands
+    /// (docs/nyan/tui.md §3.3). With auto-compact on, the 200k model's threshold
+    /// is 167k, so warning starts at 127k and error at 147k.
+    #[test]
+    fn warning_and_error_thresholds_are_two_distinct_bands() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::process_env::remove("DISABLE_COMPACT");
+        crate::utils::process_env::remove("DISABLE_AUTO_COMPACT");
+        crate::utils::process_env::remove("NYAN_BLOCKING_LIMIT_OVERRIDE");
+        crate::utils::process_env::remove("NYAN_AUTO_COMPACT_WINDOW");
+        crate::utils::process_env::remove("NYAN_AUTOCOMPACT_PCT_OVERRIDE");
+        crate::utils::process_env::remove("NYAN_MAX_OUTPUT_TOKENS");
+        crate::utils::process_env::remove("NYAN_MAX_TOKENS_CAP");
+        crate::utils::process_env::remove("NYAN_MAX_CONTEXT_TOKENS");
+        crate::utils::process_env::remove("NYAN_DISABLE_1M_CONTEXT");
+        let config = crate::utils::config::GlobalConfig::default();
+
+        let below =
+            calculate_token_warning_state_with_config(126_999, "claude-sonnet-4-20250514", &config);
+        assert!(!below.is_above_warning_threshold);
+        assert!(!below.is_above_error_threshold);
+
+        let warning =
+            calculate_token_warning_state_with_config(127_000, "claude-sonnet-4-20250514", &config);
+        assert!(warning.is_above_warning_threshold);
+        assert!(!warning.is_above_error_threshold);
+
+        let error =
+            calculate_token_warning_state_with_config(147_000, "claude-sonnet-4-20250514", &config);
+        assert!(error.is_above_warning_threshold);
+        assert!(error.is_above_error_threshold);
     }
 
     #[test]

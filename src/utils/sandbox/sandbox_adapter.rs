@@ -2532,11 +2532,11 @@ mod tests {
             // AppStore::replace_with. A non-re-entrant turn would deadlock
             // here.
             app_store_in_listener
-                .replace_with(|state| state.status_line_text = Some(format!("{total}")));
+                .replace_with(|state| state.advisor_model = Some(format!("{total}")));
         });
 
         record_sandbox_violations(3);
-        assert_eq!(app_store.get().status_line_text.as_deref(), Some("3"));
+        assert_eq!(app_store.get().advisor_model.as_deref(), Some("3"));
 
         store.unsubscribe(id);
         store.reset_for_test();

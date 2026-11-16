@@ -48,7 +48,6 @@ pub mod review;
 pub mod sandbox;
 pub mod skills;
 pub mod stats;
-pub mod statusline;
 pub mod tasks;
 pub mod terminal_setup;
 pub mod theme;
@@ -341,11 +340,6 @@ impl Command {
         self
     }
 
-    fn disable_non_interactive(mut self) -> Self {
-        self.disable_non_interactive = true;
-        self
-    }
-
     /// Maps to: CC `fetchCommandsForClient`'s per-prompt command
     /// (`services/mcp/client.ts:2054-2097`): the server's prompt, bound to the
     /// `client` it was fetched from.
@@ -629,7 +623,6 @@ fn commands() -> Vec<Command> {
         )
         .immediate()
         .executable(execution::call_status),
-        statusline::command(),
         Command::local("stickers", "Order nyan stickers"),
         Command::local_ui("theme", "Change the theme")
             .executable(execution::call_theme),
@@ -1201,7 +1194,8 @@ mod tests {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
 
         let catalog = commands();
-        // 54 direct descriptors plus @nyan `/retrieval` and `/decision`. `/login` and `/logout` are gone: Anthropic is
+        // 53 direct descriptors plus @nyan `/retrieval` and `/decision`.
+        // `/statusline` is gone with the built-in footer info line (docs/nyan/tui.md). `/login` and `/logout` are gone: Anthropic is
         // API-key only; `/fast` is gone with Fast mode; `/passes` is gone
         // with claude.ai guest passes; `/upgrade`, `/extra-usage`,
         // `/rate-limit-options` and `/usage` are gone with the claude.ai
@@ -1209,8 +1203,9 @@ mod tests {
         // `/desktop`, `/mobile`, `/install-slack-app` and
         // `/install-github-app` are gone with the official client apps;
         // `/feedback` and `/bug` are gone with Anthropic feedback submission.
-        assert_eq!(catalog.len(), 56);
+        assert_eq!(catalog.len(), 55);
         for removed in [
+            "statusline",
             "login",
             "logout",
             "passes",
@@ -1273,7 +1268,6 @@ mod tests {
             "skills",
             "stats",
             "status",
-            "statusline",
             "stickers",
             "theme",
             "review",

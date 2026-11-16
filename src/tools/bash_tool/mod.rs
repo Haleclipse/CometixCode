@@ -991,6 +991,16 @@ pub(crate) fn bash_output(
         stripped.push_str("\n(output contained invalid UTF-8)");
     }
 
+    // @nyan: a finished Bash can change the branch without changing cwd
+    // (checkout, commit). Subagents share the parent AppStore, so only the
+    // main thread may refresh — same `agent_id.is_none()` gate as compaction.
+    if context.agent_id.is_none()
+        && let Some(store) = context.app_store.store.clone()
+    {
+        let cwd = cwd_after.clone().unwrap_or_else(|| context.effective_cwd());
+        crate::state::footer_metrics::refresh_git(&store, Some(cwd));
+    }
+
     Ok(BashOutput {
         stdout: stripped,
         stderr,
