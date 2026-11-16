@@ -1,54 +1,52 @@
-## What's new in 0.2.1
+## What's new in 0.2.2
 
 **Breaking**
 
-- The remaining `CLAUDE_*` / `CLAUDE_CODE_*` environment variables are renamed to `NYAN_*` (e.g. `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` → `NYAN_API_KEY_HELPER_TTL_MS`, `CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` → `NYAN_MEMORY_PATH_OVERRIDE`). If you set any of them in shell profiles, scripts or CI, switch to the `NYAN_*` name.
-- The `claudeCodeHints` global config field and plugin hint recommendations are removed.
+- The `statusLine` setting and the `/statusline` command are removed; the footer now shows the same information built in. A leftover `statusLine` key in `settings.json` is ignored on load but fails strict validation when the file is edited through nyan — delete it.
 
-**Identity**
+**New TUI**
 
-- UI copy and system prompts now identify the assistant as nyan.
-- Requests no longer send the `x-app` header.
-- MCP OAuth no longer uses Claude Code client metadata; a client metadata document is used only when `MCP_OAUTH_CLIENT_METADATA_URL` is set explicitly, otherwise dynamic client registration is used.
+- **Footer info line**, always on: directory, branch (`@sha` when detached), `◇` inside a linked worktree; model, thinking effort, context as `used/window` (e.g. `84k/200k`), cache read share of the latest request, and decode speed in tokens/s. Narrow terminals drop segments by priority instead of wrapping.
+  - Context turns yellow 40k tokens before auto-compact and red at 20k; the old "Context low (N% remaining)" line is now a short hint.
+  - The cache segment turns yellow when a request misses a prefix that should have been cached (not after compaction, `/clear`, `/resume` or a model switch).
+  - tokens/s counts output (including thinking) from the first streamed token to the end of each main-thread request, summed per turn.
+- **Todo panel**: the task list now shows under the spinner while working and above the prompt when idle — expanded, one line, or `✔ N/N done` until your next message. `Ctrl+T` expands or collapses it; collapsing by hand keeps it collapsed for the session.
+- **Agent panel**, below the prompt: one row per background agent, teammate, shell or dream with its latest tool call, tool count, tokens and elapsed time. `↓` from an empty prompt focuses it — the selected row shows its last three tool calls, `Enter` opens its details, `x` stops it, `Esc` returns. Finished rows leave with a short `/tasks to see agents` hint; failed or stopped rows stay 30 seconds. It replaces the teammate tree under the spinner and the tasks/teammates pills (which come back on terminals under 16 rows).
 
-**Removed**
+**New**
 
-- The built-in Anthropic plugin marketplace, the official MCP registry and plugin recommendations. Marketplaces now come only from settings or `/plugin marketplace add`, and marketplace auto-update is opt-in.
-- claude.ai account and subscription features: OAuth account, quota, voice mode, the claude.ai MCP connector, Claude in Chrome, Claude Desktop / mobile / Slack / GitHub app integrations, cloud remote sessions and tasks, and the feedback and survey features.
-- Telemetry and GrowthBook.
+- `nyan web search <query…>` and `nyan web fetch <url>` expose nyan's web search and fetch on the command line, with `--json`, `--limit`, `--range` and `--timeout`.
 
-**Fixes and security**
+**Fixes**
 
-- Bash AST safety checks are now enabled for all users and fail closed on unsupported shell syntax.
-- `nyan update --help` now shows help instead of running the updater.
-- Teammate names are sanitized before de-duplication, so names such as `qa:frontend` and `qa-frontend` no longer collide.
-- `rmcp` is bumped to 3.9.0 to fix RustSEC advisories (RUSTSEC-2026-0457, -0461, -0462).
+- Very long sessions no longer render a blank screen: drawing coordinates are widened past 32767 rows, and thinking blocks are collapsed by default (`Ctrl+O` shows them; an explicit `expandThinking: true` still applies).
+- Resuming an interrupted turn no longer injects "Continue from where you left off." — the prompt shows "Previous turn was interrupted · Enter to continue" instead.
+- The code-search index no longer walks nested worktrees, virtualenvs and other ignored directories in non-git folders, which could exhaust memory; one index is shared per worktree.
 
-## 0.2.1 更新内容
+## 0.2.2 更新内容
 
 **不兼容变更**
 
-- 剩余的 `CLAUDE_*` / `CLAUDE_CODE_*` 环境变量统一改名为 `NYAN_*`（如 `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` → `NYAN_API_KEY_HELPER_TTL_MS`、`CLAUDE_COWORK_MEMORY_PATH_OVERRIDE` → `NYAN_MEMORY_PATH_OVERRIDE`）。如果你在 shell 配置、脚本或 CI 中设置过这些变量，请改用 `NYAN_*` 名称。
-- 移除全局配置字段 `claudeCodeHints` 及插件提示推荐。
+- 移除 `statusLine` 设置与 `/statusline` 命令，页脚改为内置显示同类信息。`settings.json` 里残留的 `statusLine` 键加载时会被忽略，但经 nyan 编辑该文件时会被严格校验拒绝，请删除。
 
-**身份**
+**全新 TUI**
 
-- 界面文案与系统提示中的身份统一为 nyan。
-- 请求不再发送 `x-app` 头。
-- MCP OAuth 不再使用 Claude Code 客户端元数据；仅在显式设置 `MCP_OAUTH_CLIENT_METADATA_URL` 时使用客户端元数据文档，否则走动态客户端注册。
+- **页脚信息行**，常驻显示：目录、分支（detached 时为 `@sha`）、linked worktree 中显示 `◇`；模型、思考等级、上下文 `已用/窗口`（如 `84k/200k`）、最近一次请求的缓存读取占比、解码速度 t/s。窄屏按优先级省略各段，不换行。
+  - 上下文在距自动压缩 40k 时变黄、20k 时变红；原来的「Context low (N% remaining)」改为短提示。
+  - 本应命中缓存的前缀未命中时，cache 段变黄（压缩、`/clear`、`/resume` 或切换模型后的首个请求除外）。
+  - t/s 统计主线程每个请求从首个流式 token 到结束的输出速度（含思考），按轮汇总。
+- **todo 面板**：任务列表在生成中显示于 spinner 下方，空闲时显示于输入框上方；有展开、单行、`✔ N/N done` 三种形态，全部完成后保留到下一次提交。`Ctrl+T` 展开 / 收起；手动收起后本会话不再自动展开。
+- **agent 面板**，位于输入框下方：每个后台 agent、teammate、shell、dream 一行，显示最近一次工具调用、工具数、token 与耗时。空输入框按 `↓` 进入——选中行展开最近 3 次工具调用，`Enter` 打开详情，`x` 停止，`Esc` 返回。完成的行立即消失并短暂提示 `/tasks to see agents`；失败或被停止的行保留 30 秒。它取代了 spinner 下的 teammate 树与 tasks / teammates 小标签（终端不足 16 行时小标签恢复）。
 
-**移除**
+**新增**
 
-- 内置 Anthropic 插件市场、官方 MCP 注册表与插件推荐。插件市场现在只来自设置或 `/plugin marketplace add`，市场自动更新需手动开启。
-- claude.ai 账号与订阅相关功能：OAuth 账号、配额、语音模式、claude.ai MCP 连接器、Claude in Chrome、Claude Desktop / 移动端 / Slack / GitHub app 集成、云端远程会话与任务，以及反馈与问卷。
-- 遥测与 GrowthBook。
+- `nyan web search <query…>` 与 `nyan web fetch <url>`：在命令行调用 nyan 的网页搜索与抓取，支持 `--json`、`--limit`、`--range`、`--timeout`。
 
-**修复与安全**
+**修复**
 
-- Bash AST 安全检查对所有用户启用，遇到不支持的 shell 语法时默认拒绝自动放行。
-- `nyan update --help` 现在只显示帮助，不再运行更新器。
-- 队友名称先清理再去重，`qa:frontend` 与 `qa-frontend` 不再冲突。
-- `rmcp` 升级到 3.9.0，修复 RustSEC 公告（RUSTSEC-2026-0457、-0461、-0462）。
+- 超长会话不再白屏：绘制坐标突破 32767 行上限；thinking 块默认折叠（`Ctrl+O` 查看，显式设置 `expandThinking: true` 仍然生效）。
+- 恢复被中断的回合时不再注入「Continue from where you left off.」，改为在输入框上方提示「Previous turn was interrupted · Enter to continue」。
+- 代码检索索引在非 git 目录中不再扫描嵌套 worktree、虚拟环境等被忽略的目录，避免内存耗尽；同一 worktree 共享一份索引。
 
 ---
 
