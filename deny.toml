@@ -14,10 +14,15 @@ no-default-features = false
 
 [advisories]
 # A vulnerability with no patched version and no reachable call path cannot
-# be silenced by severity alone; the ignore list starts empty on purpose.
+# be silenced by severity alone; every ignore names its advisory and reason.
 version = 2
 db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = []
+ignore = [
+    # chrono is marked unmaintained; it is informational, not a vulnerability,
+    # and has no patched version. nyan depends on it directly and through
+    # oauth2 and rmcp. Revisit when moving to jiff or time.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained (informational, no fix); direct dep and via oauth2/rmcp; migrate to jiff or time later" },
+]
 yanked = "deny"
 unmaintained = "workspace"
 unsound = "all"
